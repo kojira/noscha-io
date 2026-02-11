@@ -2,120 +2,157 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
 <title>noscha.io — Lightning-powered identity services</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0d0d0d;--surface:#1a1a1a;--border:#2a2a2a;--text:#e0e0e0;--muted:#888;--purple:#8b5cf6;--purple-dim:#6d28d9;--orange:#f97316;--orange-dim:#c2410c;--green:#22c55e;--red:#ef4444}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
-a{color:var(--purple);text-decoration:none}
-.container{max-width:680px;margin:0 auto;padding:2rem 1.5rem}
+:root{--bg:#0a0a0a;--surface:#111;--border:#222;--text:#c0c0c0;--muted:#666;--accent:#00ff88;--accent-dim:#00cc6a;--orange:#f7931a;--orange-dim:#c2410c;--green:#00ff88;--red:#ff4444}
+body{font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.accent{color:var(--accent)}
+.container{max-width:700px;margin:0 auto;padding:2rem 1.5rem}
 
 /* Header */
-.logo{font-size:2rem;font-weight:700;text-align:center;margin-bottom:.25rem}
-.logo span:first-child{color:var(--purple)}
-.logo span:last-child{color:var(--orange)}
-.tagline{text-align:center;color:var(--muted);font-size:.95rem;margin-bottom:2.5rem}
+.logo{font-size:1.6rem;font-weight:700;text-align:center;margin-bottom:.5rem;letter-spacing:-.02em;color:var(--text)}
+.tagline{text-align:center;color:var(--muted);font-size:.82rem;margin-bottom:1rem;line-height:1.5}
+
+/* Curl box */
+.curl-box{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:.6rem .85rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.curl-box code{font-size:.78rem;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.curl-box .curl-prefix{color:var(--muted);font-size:.78rem;user-select:none}
+.curl-copy-btn{background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:.7rem;padding:.25rem .5rem;cursor:pointer;font-family:inherit;white-space:nowrap;transition:color .15s,border-color .15s}
+.curl-copy-btn:hover{color:var(--accent);border-color:var(--accent)}
+
+/* Doc links */
+.doc-links{display:flex;justify-content:center;gap:1rem;margin-bottom:2rem;font-size:.78rem}
+.doc-links a{color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:.3rem .6rem;transition:color .15s,border-color .15s}
+.doc-links a:hover{color:var(--accent);border-color:var(--accent);text-decoration:none}
 
 /* Sections */
-.section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem}
-.section h2{font-size:1.1rem;margin-bottom:1rem;color:var(--text)}
+.section{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1.5rem;margin-bottom:1.5rem}
+.section h2{font-size:.9rem;margin-bottom:1rem;color:var(--text);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
 
 /* Features */
 .features{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.5rem}
-.feat{text-align:center;padding:1rem .5rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
-.feat-icon{font-size:1.5rem;margin-bottom:.25rem}
-.feat-title{font-size:.85rem;font-weight:600;color:var(--text)}
-.feat-desc{font-size:.75rem;color:var(--muted)}
+.feat{text-align:center;padding:.85rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--surface)}
+.feat-icon{font-size:1.3rem;margin-bottom:.25rem}
+.feat-title{font-size:.8rem;font-weight:600;color:var(--text)}
+.feat-desc{font-size:.7rem;color:var(--muted)}
 
 /* Pricing */
-.pricing-table{width:100%;border-collapse:collapse}
-.pricing-table th{text-align:left;padding:.5rem .75rem;border-bottom:2px solid var(--border);color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
-.pricing-table td{padding:.5rem .75rem;border-bottom:1px solid var(--border)}
+.pricing-wrap{overflow-x:auto}
+.pricing-table{width:100%;border-collapse:collapse;font-size:.8rem}
+.pricing-table th{text-align:left;padding:.4rem .6rem;border-bottom:1px solid var(--border);color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.pricing-table td{padding:.4rem .6rem;border-bottom:1px solid #1a1a1a}
 .pricing-table tr:last-child td{border-bottom:none}
 .price{color:var(--orange);font-weight:600}
+.pricing-json{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.75rem;margin-top:.75rem;font-size:.68rem;color:var(--muted);overflow-x:auto;white-space:pre;line-height:1.5;max-height:260px;overflow-y:auto}
 
 /* Form */
 .field{margin-bottom:1.25rem}
-.field label{display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem;color:var(--muted)}
-input[type=text],input[type=email]{width:100%;padding:.6rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.95rem;outline:none;transition:border .2s}
-input:focus{border-color:var(--purple)}
-.input-hint{font-size:.75rem;margin-top:.25rem;min-height:1.1em}
+.field label{display:block;font-size:.78rem;font-weight:600;margin-bottom:.35rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+input[type=text],input[type=email]{width:100%;padding:.55rem .7rem;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:16px;font-family:inherit;outline:none;transition:border-color .15s}
+input:focus{border-color:var(--accent)}
+.input-hint{font-size:.72rem;margin-top:.25rem;min-height:1.1em}
 .hint-ok{color:var(--green)}
 .hint-err{color:var(--red)}
 .hint-loading{color:var(--muted)}
 
 /* Radio plan selector */
-.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:.5rem}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:.5rem}
 .plan-opt{position:relative}
 .plan-opt input{position:absolute;opacity:0;pointer-events:none}
-.plan-opt label{display:block;text-align:center;padding:.6rem .25rem;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:.8rem;transition:all .2s;background:var(--bg)}
+.plan-opt label{display:block;text-align:center;padding:.55rem .25rem;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:.75rem;transition:all .15s;background:var(--bg)}
 .plan-opt label .dur{display:block;font-weight:600;color:var(--text)}
-.plan-opt label .sat{display:block;font-size:.7rem;color:var(--orange)}
-.plan-opt input:checked+label{border-color:var(--purple);background:var(--purple-dim);color:#fff}
+.plan-opt label .sat{display:block;font-size:.65rem;color:var(--orange)}
+.plan-opt input:checked+label{border-color:var(--accent);background:#00ff8810;color:var(--accent)}
+.plan-opt input:checked+label .dur{color:var(--accent)}
 .plan-opt input:checked+label .sat{color:var(--orange)}
 
 /* Service toggles */
-.svc-toggle{display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;cursor:pointer;font-size:.9rem}
-.svc-toggle input[type=checkbox]{accent-color:var(--purple);width:16px;height:16px}
+.svc-toggle{display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;cursor:pointer;font-size:.82rem}
+.svc-toggle input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
 .svc-fields{padding-left:1.5rem;margin-bottom:1rem;display:none}
 .svc-fields.open{display:block}
 .svc-fields .field{margin-bottom:.75rem}
 .svc-fields .field:last-child{margin-bottom:0}
 .inline-row{display:flex;gap:.5rem;align-items:center}
-.inline-row select{padding:.6rem .5rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;outline:none}
+.inline-row select{padding:.55rem .5rem;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:16px;font-family:inherit;outline:none}
 .inline-row input[type=text]{flex:1}
-.check-row{display:flex;align-items:center;gap:.4rem;margin-top:.35rem;font-size:.8rem;color:var(--muted)}
-.check-row input{accent-color:var(--purple)}
+.check-row{display:flex;align-items:center;gap:.4rem;margin-top:.35rem;font-size:.75rem;color:var(--muted)}
+.check-row input{accent-color:var(--accent)}
 
 /* Buttons */
-.btn{display:block;width:100%;padding:.75rem;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;transition:all .2s}
-.btn-primary{background:linear-gradient(135deg,var(--purple),var(--orange));color:#fff}
-.btn-primary:hover{opacity:.9}
-.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.btn{display:block;width:100%;padding:.7rem;border:none;border-radius:4px;font-size:.88rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s}
+.btn-primary{background:var(--accent);color:#0a0a0a}
+.btn-primary:hover{background:var(--accent-dim)}
+.btn-primary:disabled{opacity:.3;cursor:not-allowed}
 .btn-secondary{background:var(--surface);border:1px solid var(--border);color:var(--text);margin-top:.75rem}
-.btn-secondary:hover{border-color:var(--purple)}
+.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
 
 /* Payment screen */
 #payment-screen{display:none}
 .qr-wrap{text-align:center;margin:1.5rem 0}
-.qr-wrap #qrcode{display:inline-block;padding:12px;background:#fff;border-radius:8px}
-.bolt11-box{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;word-break:break-all;font-size:.75rem;color:var(--muted);cursor:pointer;position:relative;margin-bottom:1rem}
-.bolt11-box:hover{border-color:var(--purple)}
-.bolt11-box::after{content:'click to copy';position:absolute;right:.5rem;top:.5rem;font-size:.65rem;color:var(--purple)}
-.status-badge{display:inline-block;padding:.25rem .75rem;border-radius:20px;font-size:.85rem;font-weight:600}
-.status-pending{background:#f9731622;color:var(--orange)}
-.status-paid{background:#22c55e22;color:var(--green)}
-.status-provisioned{background:#8b5cf622;color:var(--purple)}
-.poll-info{text-align:center;color:var(--muted);font-size:.8rem;margin-top:.5rem}
+.qr-wrap #qrcode{display:inline-block;padding:12px;background:#fff;border-radius:4px}
+.bolt11-box{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.75rem;word-break:break-all;font-size:.7rem;color:var(--muted);cursor:pointer;position:relative;margin-bottom:1rem;font-family:inherit}
+.bolt11-box:hover{border-color:var(--accent)}
+.bolt11-box::after{content:'click to copy';position:absolute;right:.5rem;top:.5rem;font-size:.6rem;color:var(--accent)}
+.status-badge{display:inline-block;padding:.2rem .6rem;border-radius:4px;font-size:.78rem;font-weight:600}
+.status-pending{background:#f7931a18;color:var(--orange)}
+.status-paid{background:#00ff8818;color:var(--green)}
+.status-provisioned{background:#00ff8818;color:var(--accent)}
+.poll-info{text-align:center;color:var(--muted);font-size:.75rem;margin-top:.5rem}
 
 /* Success */
 .success-box{text-align:center;padding:2rem 1rem}
-.success-check{font-size:3rem;margin-bottom:.5rem}
-.success-title{font-size:1.2rem;font-weight:700;color:var(--green);margin-bottom:.5rem}
-.success-detail{font-size:.85rem;color:var(--muted)}
+.success-check{font-size:2.5rem;margin-bottom:.5rem;color:var(--green)}
+.success-title{font-size:1.1rem;font-weight:700;color:var(--green);margin-bottom:.5rem}
+.success-detail{font-size:.8rem;color:var(--muted)}
 .mgmt-section{margin-top:1.5rem;text-align:left}
-.mgmt-link{display:block;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;margin:.5rem 0;word-break:break-all;text-align:center}
-.mgmt-link a{color:var(--purple);font-weight:600;font-size:.95rem}
-.mgmt-warning{background:#f9731622;border:1px solid var(--orange-dim);border-radius:6px;padding:.6rem .75rem;font-size:.8rem;color:var(--orange);margin-top:.75rem;text-align:center}
-.copy-btn{display:inline-block;padding:.4rem .75rem;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.8rem;cursor:pointer;margin-top:.5rem;transition:all .2s}
-.copy-btn:hover{border-color:var(--purple);color:var(--purple)}
+.mgmt-link{display:block;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.75rem;margin:.5rem 0;word-break:break-all;text-align:center}
+.mgmt-link a{color:var(--accent);font-weight:600;font-size:.85rem}
+.mgmt-warning{background:#f7931a12;border:1px solid #f7931a44;border-radius:4px;padding:.6rem .75rem;font-size:.75rem;color:var(--orange);margin-top:.75rem;text-align:center}
+.copy-btn{display:inline-block;padding:.35rem .7rem;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.75rem;cursor:pointer;font-family:inherit;margin-top:.5rem;transition:all .15s}
+.copy-btn:hover{border-color:var(--accent);color:var(--accent)}
 
 /* Responsive */
 @media(max-width:600px){
   .features{grid-template-columns:1fr}
-  .plans{grid-template-columns:repeat(auto-fit,minmax(60px,1fr))}
+  .plans{grid-template-columns:repeat(auto-fit,minmax(70px,1fr))}
   .container{padding:1.25rem 1rem}
   .inline-row{flex-direction:column}
   .inline-row select,.inline-row input[type=text]{width:100%}
+  .doc-links{flex-wrap:wrap;gap:.5rem}
+  .curl-box{flex-direction:column;align-items:stretch;gap:.4rem}
+  .curl-box code{font-size:.7rem}
+  .pricing-wrap{-webkit-overflow-scrolling:touch}
+  input[type=text],input[type=email],select,textarea{font-size:16px !important}
+  .pricing-table{font-size:.7rem}
 }
 </style>
 </head>
 <body>
 
 <div class="container">
-  <div class="logo"><span>noscha</span><span>.io</span></div>
-  <p class="tagline">Lightning-powered disposable email, subdomain &amp; NIP-05 identity. No KYC. Instant activation.</p>
+  <div class="logo">noscha.io</div>
+  <p class="tagline">Disposable Infrastructure for <span class="accent">AI Agents</span><br>Pay with Lightning. No account needed. Humans welcome to observe.</p>
+
+  <!-- Curl box -->
+  <div class="curl-box">
+    <code><span class="curl-prefix">$ </span>curl -s https://noscha.io/llms.txt</code>
+    <button class="curl-copy-btn" id="curl-copy-btn">copy</button>
+  </div>
+
+  <!-- Doc links -->
+  <div class="doc-links">
+    <a href="/llms.txt">/llms.txt</a>
+    <a href="/skill.md">/skill.md</a>
+    <a href="/api/docs">/api/docs</a>
+  </div>
 
   <!-- Info Section -->
   <div id="info-section">
@@ -127,13 +164,16 @@ input:focus{border-color:var(--purple)}
 
     <div class="section">
       <h2>Pricing (per service)</h2>
+      <div class="pricing-wrap">
       <table class="pricing-table">
-        <tr><th>Duration</th><th>Subdomain</th><th>Email</th><th>NIP-05</th><th style="color:var(--green)">All-in Bundle</th></tr>
+        <tr><th>Duration</th><th>Subdomain</th><th>Email</th><th>NIP-05</th><th style="color:var(--green)">All Services (Email + Subdomain + NIP-05)</th></tr>
         <tbody id="pricing-body">
         <tr><td colspan="5" style="text-align:center;color:var(--muted)">Loading prices...</td></tr>
         </tbody>
       </table>
-      <p style="font-size:.75rem;color:var(--muted);margin-top:.5rem">* All prices in sats. Select all 3 services for the bundle discount.</p>
+      </div>
+      <div class="pricing-json" id="pricing-json" style="display:none"></div>
+      <p style="font-size:.68rem;color:var(--muted);margin-top:.5rem">* All prices in sats. Select all 3 services for the bundle discount.</p>
     </div>
 
     <!-- Order Form -->
@@ -149,8 +189,6 @@ input:focus{border-color:var(--purple)}
       <div class="field">
         <label>Plan</label>
         <div class="plans">
-          <div class="plan-opt"><input type="radio" name="plan" id="p5m" value="5m"><label for="p5m"><span class="dur">5 min</span></label></div>
-          <div class="plan-opt"><input type="radio" name="plan" id="p30m" value="30m"><label for="p30m"><span class="dur">30 min</span></label></div>
           <div class="plan-opt"><input type="radio" name="plan" id="p1h" value="1h"><label for="p1h"><span class="dur">1 hour</span></label></div>
           <div class="plan-opt"><input type="radio" name="plan" id="p1d" value="1d"><label for="p1d"><span class="dur">1 day</span></label></div>
           <div class="plan-opt"><input type="radio" name="plan" id="p7d" value="7d" checked><label for="p7d"><span class="dur">1 week</span></label></div>
@@ -169,10 +207,10 @@ input:focus{border-color:var(--purple)}
             <label>Forward to</label>
             <input type="email" id="email-forward" placeholder="you@example.com">
           </div>
-          <div style="font-size:.78rem;color:var(--muted);margin-top:.5rem;line-height:1.5">
-            ⚠️ Email forwarding is receive-only. You cannot send emails from your noscha.io address.<br>
-            ⚠️ Each user is limited to 5 forwarded emails per 24 hours.<br>
-            ⚠️ During high traffic periods, email forwarding may be temporarily unavailable.
+          <div style="font-size:.7rem;color:var(--muted);margin-top:.5rem;line-height:1.5">
+            ! Email forwarding is receive-only. You cannot send emails from your noscha.io address.<br>
+            ! Each user is limited to 5 forwarded emails per 24 hours.<br>
+            ! During high traffic periods, email forwarding may be temporarily unavailable.
           </div>
         </div>
 
@@ -201,14 +239,14 @@ input:focus{border-color:var(--purple)}
         </div>
       </div>
 
-      <div id="total-display" style="text-align:center;padding:.75rem;margin-bottom:1rem;border:1px solid var(--border);border-radius:8px;background:var(--bg);display:none">
-        <span style="color:var(--muted);font-size:.85rem">Total: </span>
-        <span id="total-sats" style="font-size:1.2rem;font-weight:700;color:var(--orange)">0 sats</span>
-        <div id="bundle-badge" style="display:none;margin-top:.25rem;font-size:.75rem;font-weight:600;color:var(--green)">All-in bundle discount applied!</div>
+      <div id="total-display" style="text-align:center;padding:.65rem;margin-bottom:1rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);display:none">
+        <span style="color:var(--muted);font-size:.78rem">Total: </span>
+        <span id="total-sats" style="font-size:1.1rem;font-weight:700;color:var(--orange)">0 sats</span>
+        <div id="bundle-badge" style="display:none;margin-top:.25rem;font-size:.7rem;font-weight:600;color:var(--green)">All-in bundle discount applied!</div>
       </div>
 
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.78rem;color:var(--muted);line-height:1.6">
-        <div style="font-weight:600;color:var(--text);margin-bottom:.4rem">Terms of Service</div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.72rem;color:var(--muted);line-height:1.6">
+        <div style="font-weight:600;color:var(--text);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.04em;font-size:.7rem">Terms of Service</div>
         <ul style="margin:0;padding-left:1.2rem">
           <li>No spam or bulk email usage</li>
           <li>No illegal activities</li>
@@ -216,7 +254,7 @@ input:focus{border-color:var(--purple)}
           <li>Email forwarding limits apply (5/day per user)</li>
           <li>noscha.io reserves the right to terminate accounts that violate these terms</li>
         </ul>
-        <label style="display:flex;align-items:center;gap:.4rem;margin-top:.6rem;cursor:pointer;color:var(--text);font-size:.82rem">
+        <label style="display:flex;align-items:center;gap:.4rem;margin-top:.6rem;cursor:pointer;color:var(--text);font-size:.75rem">
           <input type="checkbox" id="tos-agree"> I agree to the Terms of Service
         </label>
       </div>
@@ -235,7 +273,7 @@ input:focus{border-color:var(--purple)}
       <div class="qr-wrap"><div id="qrcode"></div></div>
       <div class="bolt11-box" id="bolt11-box" title="Click to copy"></div>
       <div style="text-align:center">
-        <span id="pay-amount" style="font-size:1.1rem;font-weight:700;color:var(--orange)"></span>
+        <span id="pay-amount" style="font-size:1rem;font-weight:700;color:var(--orange)"></span>
       </div>
       <div class="poll-info" id="poll-info">Checking payment status...</div>
       <button class="btn btn-secondary" id="back-btn">Cancel</button>
@@ -261,12 +299,12 @@ input:focus{border-color:var(--purple)}
 <!-- Donate Section -->
 <div class="container" style="padding-top:0">
   <div class="section" style="text-align:center;padding:1.5rem">
-    <h2 style="font-size:1.1rem;margin-bottom:.75rem">⚡ Support noscha.io</h2>
-    <p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem">Help keep this service running with a Lightning donation</p>
-    <div id="donate-qr" style="display:inline-block;padding:8px;background:#fff;border-radius:8px;margin-bottom:.75rem"></div>
+    <h2 style="font-size:.85rem;margin-bottom:.75rem">Support noscha.io</h2>
+    <p style="color:var(--muted);font-size:.75rem;margin-bottom:1rem">Help keep this service running with a Lightning donation</p>
+    <div id="donate-qr" style="display:inline-block;padding:8px;background:#fff;border-radius:4px;margin-bottom:.75rem"></div>
     <div style="display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:.5rem">
-      <code style="font-size:.8rem;color:var(--orange);background:var(--bg);padding:.4rem .75rem;border-radius:6px;border:1px solid var(--border)">nostarou@coinos.io</code>
-      <button id="donate-copy-btn" style="padding:.4rem .75rem;font-size:.75rem;background:var(--purple-dim);color:#fff;border:none;border-radius:6px;cursor:pointer;transition:background .2s">Copy</button>
+      <code style="font-size:.75rem;color:var(--orange);background:var(--bg);padding:.35rem .7rem;border-radius:4px;border:1px solid var(--border)">nostarou@coinos.io</code>
+      <button id="donate-copy-btn" class="curl-copy-btn">copy</button>
     </div>
   </div>
 </div>
@@ -305,8 +343,8 @@ input:focus{border-color:var(--purple)}
   });
 
   function renderPricingTable(prices) {
-    var labels = {'5m':'5 min','30m':'30 min','1h':'1 hour','1d':'1 day','7d':'1 week','30d':'1 month','90d':'3 months','365d':'1 year'};
-    var periods = ['5m','30m','1h','1d','7d','30d','90d','365d'];
+    var labels = {'1h':'1 hour','1d':'1 day','7d':'1 week','30d':'1 month','90d':'3 months','365d':'1 year'};
+    var periods = ['1h','1d','7d','30d','90d','365d'];
     var body = document.getElementById('pricing-body');
     var html = '';
     periods.forEach(function(p) {
@@ -319,6 +357,16 @@ input:focus{border-color:var(--purple)}
       html += '</tr>';
     });
     body.innerHTML = html;
+
+    // Build JSON block for 1h–365d
+    var jsonData = {};
+    periods.forEach(function(p) {
+      var pr = prices[p] || {};
+      jsonData[p] = {subdomain:pr.subdomain||0, email:pr.email||0, nip05:pr.nip05||0, bundle:pr.bundle||0};
+    });
+    var jsonEl = document.getElementById('pricing-json');
+    jsonEl.textContent = JSON.stringify(jsonData, null, 2);
+    jsonEl.style.display = 'block';
   }
 
   function calcTotal(){
@@ -533,6 +581,15 @@ input:focus{border-color:var(--purple)}
     orderBtn.disabled = false;
     orderBtn.textContent = 'Pay with Lightning';
   });
+
+  // Curl copy button
+  document.getElementById('curl-copy-btn').addEventListener('click', function(){
+    var btn = this;
+    navigator.clipboard.writeText('curl -s https://noscha.io/llms.txt').then(function(){
+      btn.textContent = 'copied!';
+      setTimeout(function(){ btn.textContent = 'copy'; }, 1500);
+    });
+  });
 })();
 
 // Donate QR + copy
@@ -546,12 +603,12 @@ input:focus{border-color:var(--purple)}
   document.getElementById('donate-copy-btn').addEventListener('click', function(){
     var btn = this;
     navigator.clipboard.writeText('nostarou@coinos.io').then(function(){
-      btn.textContent = 'Copied!';
-      setTimeout(function(){ btn.textContent = 'Copy'; }, 1500);
+      btn.textContent = 'copied!';
+      setTimeout(function(){ btn.textContent = 'copy'; }, 1500);
     });
   });
 })();
 </script>
-<footer style="text-align:center;padding:1rem;color:#666;font-size:0.75rem;">v2026.02.11 · <a href="https://github.com/kojira/noscha-io" target="_blank" rel="noopener" style="color:#888;text-decoration:none;">GitHub</a></footer>
+<footer style="text-align:center;padding:1rem;color:#444;font-size:0.7rem;font-family:'JetBrains Mono',monospace;">v2026.02.12 · <a href="https://github.com/kojira/noscha-io" target="_blank" rel="noopener" style="color:#444;text-decoration:none;">GitHub</a></footer>
 </body>
 </html>

@@ -377,15 +377,15 @@ pub type PricingConfig = HashMap<String, HashMap<String, u64>>;
 /// Get default pricing config
 pub fn default_pricing() -> PricingConfig {
     let mut config = HashMap::new();
-    let periods: [(&str, [(&str, u64); 4]); 8] = [
-        ("5m", [("subdomain",100),("email",300),("nip05",50),("bundle",400)]),
-        ("30m", [("subdomain",200),("email",600),("nip05",100),("bundle",800)]),
-        ("1h", [("subdomain",300),("email",900),("nip05",150),("bundle",1200)]),
-        ("1d", [("subdomain",500),("email",1500),("nip05",200),("bundle",1800)]),
-        ("7d", [("subdomain",1000),("email",2500),("nip05",500),("bundle",3300)]),
-        ("30d", [("subdomain",2000),("email",5000),("nip05",1000),("bundle",6500)]),
-        ("90d", [("subdomain",5000),("email",12000),("nip05",2500),("bundle",16000)]),
-        ("365d", [("subdomain",15000),("email",40000),("nip05",8000),("bundle",50000)]),
+    let periods: [(&str, [(&str, u64); 5]); 8] = [
+        ("5m", [("subdomain",100),("email",300),("nip05",50),("bundle",400),("_duration_minutes",5)]),
+        ("30m", [("subdomain",200),("email",600),("nip05",100),("bundle",800),("_duration_minutes",30)]),
+        ("1h", [("subdomain",300),("email",900),("nip05",150),("bundle",1200),("_duration_minutes",60)]),
+        ("1d", [("subdomain",500),("email",1500),("nip05",200),("bundle",1800),("_duration_minutes",1440)]),
+        ("7d", [("subdomain",1000),("email",2500),("nip05",500),("bundle",3300),("_duration_minutes",10080)]),
+        ("30d", [("subdomain",2000),("email",5000),("nip05",1000),("bundle",6500),("_duration_minutes",43200)]),
+        ("90d", [("subdomain",5000),("email",12000),("nip05",2500),("bundle",16000),("_duration_minutes",129600)]),
+        ("365d", [("subdomain",15000),("email",40000),("nip05",8000),("bundle",50000),("_duration_minutes",525600)]),
     ];
     for (period, prices) in periods {
         let mut m = HashMap::new();

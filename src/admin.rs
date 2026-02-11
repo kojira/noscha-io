@@ -58,9 +58,22 @@ pub struct ExtendRequest {
     pub minutes: u64,
 }
 
-/// Verify session token from X-Admin-Token header against R2 sessions store
+/// Verify auth: Bearer token (ADMIN_API_TOKEN) OR session token (X-Admin-Token from NIP-07 login)
 #[cfg(target_arch = "wasm32")]
-async fn verify_session_token(req: &Request, bucket: &worker::Bucket) -> Result<()> {
+async fn verify_session_token(req: &Request, bucket: &worker::Bucket, env: &Env) -> Result<()> {
+    // Check Authorization: Bearer <token> against ADMIN_API_TOKEN secret
+    if let Ok(Some(auth_header)) = req.headers().get("Authorization") {
+        if let Some(bearer_token) = auth_header.strip_prefix("Bearer ") {
+            if let Ok(secret) = env.secret("ADMIN_API_TOKEN") {
+                let expected = secret.to_string();
+                if !expected.is_empty() && bearer_token == expected {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    // Fall back to X-Admin-Token session check
     let token = req
         .headers()
         .get("X-Admin-Token")
@@ -182,7 +195,7 @@ pub async fn handle_admin_login(mut req: Request, ctx: RouteContext<()>) -> Resu
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_pricing_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let bucket = ctx.env.bucket("BUCKET")?;
-    if let Err(_) = verify_session_token(&req, &bucket).await {
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
         return Response::error("Unauthorized", 401);
     }
 
@@ -194,7 +207,7 @@ pub async fn handle_admin_pricing_get(req: Request, ctx: RouteContext<()>) -> Re
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_pricing_put(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let bucket = ctx.env.bucket("BUCKET")?;
-    if let Err(_) = verify_session_token(&req, &bucket).await {
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
         return Response::error("Unauthorized", 401);
     }
 
@@ -223,7 +236,11 @@ pub async fn load_pricing(bucket: &worker::Bucket) -> crate::types::PricingConfi
             if let Some(body) = obj.body() {
                 if let Ok(text) = body.text().await {
                     if let Ok(config) = serde_json::from_str::<crate::types::PricingConfig>(&text) {
-                        return config;
+                        let mut merged = crate::types::default_pricing();
+                        for (period, services) in config {
+                            merged.entry(period).or_default().extend(services);
+                        }
+                        return merged;
                     }
                 }
             }
@@ -243,7 +260,7 @@ pub async fn handle_admin_page(_req: Request, _ctx: RouteContext<()>) -> Result<
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_rentals(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let bucket = ctx.env.bucket("BUCKET")?;
-    if let Err(_) = verify_session_token(&req, &bucket).await {
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
         return Response::error("Unauthorized", 401);
     }
 
@@ -327,7 +344,7 @@ pub async fn handle_admin_rentals(req: Request, ctx: RouteContext<()>) -> Result
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_stats(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let bucket = ctx.env.bucket("BUCKET")?;
-    if let Err(_) = verify_session_token(&req, &bucket).await {
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
         return Response::error("Unauthorized", 401);
     }
     let now_ms = js_sys::Date::now();
@@ -394,7 +411,7 @@ pub async fn handle_admin_stats(req: Request, ctx: RouteContext<()>) -> Result<R
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_ban(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let bucket = ctx.env.bucket("BUCKET")?;
-    if let Err(_) = verify_session_token(&req, &bucket).await {
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
         return Response::error("Unauthorized", 401);
     }
 
@@ -452,7 +469,7 @@ pub async fn handle_admin_ban(req: Request, ctx: RouteContext<()>) -> Result<Res
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_unban(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let bucket = ctx.env.bucket("BUCKET")?;
-    if let Err(_) = verify_session_token(&req, &bucket).await {
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
         return Response::error("Unauthorized", 401);
     }
 
@@ -471,7 +488,7 @@ pub async fn handle_admin_unban(req: Request, ctx: RouteContext<()>) -> Result<R
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let bucket = ctx.env.bucket("BUCKET")?;
-    if let Err(_) = verify_session_token(&req, &bucket).await {
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
         return Response::error("Unauthorized", 401);
     }
 
@@ -521,7 +538,7 @@ pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Res
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_revoke(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let bucket = ctx.env.bucket("BUCKET")?;
-    if let Err(_) = verify_session_token(&req, &bucket).await {
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
         return Response::error("Unauthorized", 401);
     }
 
@@ -664,6 +681,24 @@ mod tests {
         assert_eq!(json["page"], 3);
         assert_eq!(json["limit"], 20);
         assert!(json["rentals"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_bearer_token_header_parsing() {
+        // Test extracting Bearer token from Authorization header
+        let header = "Bearer my_secret_token_123";
+        let token = header.strip_prefix("Bearer ");
+        assert_eq!(token, Some("my_secret_token_123"));
+
+        // Non-bearer header should not match
+        let header2 = "Basic dXNlcjpwYXNz";
+        let token2 = header2.strip_prefix("Bearer ");
+        assert_eq!(token2, None);
+
+        // Empty bearer should extract empty string
+        let header3 = "Bearer ";
+        let token3 = header3.strip_prefix("Bearer ");
+        assert_eq!(token3, Some(""));
     }
 
     #[test]

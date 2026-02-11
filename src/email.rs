@@ -60,6 +60,12 @@ pub fn lookup_forward_address(rental: &Rental) -> Option<String> {
     if rental.status != "active" {
         return None;
     }
+    #[cfg(target_arch = "wasm32")]
+    {
+        if crate::types::is_expired_iso(&rental.expires_at) {
+            return None;
+        }
+    }
     rental.services.email.as_ref().and_then(|email_svc| {
         if email_svc.enabled && !email_svc.forward_to.is_empty() {
             Some(email_svc.forward_to.clone())

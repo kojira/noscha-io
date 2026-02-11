@@ -38,12 +38,23 @@ use validation::validate_username;
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Serialize)]
+struct ToolInfo {
+    name: &'static str,
+    description: &'static str,
+    github: &'static str,
+    install: &'static str,
+    examples: Vec<&'static str>,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Serialize)]
 struct ServiceInfo {
     name: &'static str,
     description: &'static str,
     version: &'static str,
     features: Vec<&'static str>,
     pricing: &'static str,
+    tools: Vec<ToolInfo>,
 }
 
 pub const VERSION: &str = "2026.02.11";
@@ -317,7 +328,13 @@ async fn handle_create_order(
 
     // Send challenge to webhook_url (best effort)
     let challenge_url = format!("https://{}/api/order/{}/confirm/{}", domain, order_id, challenge);
+    let inner = serde_json::json!({
+        "event": "webhook_challenge",
+        "challenge_url": challenge_url,
+        "order_id": order_id,
+    });
     let challenge_body = serde_json::json!({
+        "content": inner.to_string(),
         "event": "webhook_challenge",
         "challenge_url": challenge_url,
         "order_id": order_id,
@@ -1016,16 +1033,22 @@ fn render_my_page(rental: &Rental, env: &Env, management_token: &str) -> String 
     let days_remaining = ((expires_ms - now_ms) / (24.0 * 60.0 * 60.0 * 1000.0)).ceil() as i64;
     let days_remaining = if days_remaining < 0 { 0 } else { days_remaining };
 
-    let status_color = if rental.status == "active" && days_remaining > 0 {
+    let mut status_color = if rental.status == "active" && days_remaining > 0 {
         "#22c55e"
     } else {
         "#ef4444"
     };
-    let display_status = if rental.status == "active" && days_remaining > 0 {
+    let mut display_status = if rental.status == "active" && days_remaining > 0 {
         "Active"
     } else {
         "Expired"
     };
+
+    // Real-time expiry check at millisecond precision
+    if is_expired_iso(&rental.expires_at) {
+        status_color = "#ef4444";
+        display_status = "Expired";
+    }
 
     // Build services list
     let mut services_html = String::new();
@@ -1285,27 +1308,384 @@ async fn cleanup_expired_dns(env: &Env) -> Result<()> {
     Ok(())
 }
 
+/// Format a number with comma thousands separators (e.g. 1500 -> "1,500")
+#[cfg(target_arch = "wasm32")]
+fn format_sats(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result.chars().rev().collect()
+}
+
+/// Parse a period key like "5m", "1h", "1d", "7d" into duration in minutes
+#[cfg(target_arch = "wasm32")]
+fn period_to_minutes(period: &str) -> u64 {
+    let s = period.trim();
+    if let Some(num) = s.strip_suffix('m') {
+        num.parse::<u64>().unwrap_or(0)
+    } else if let Some(num) = s.strip_suffix('h') {
+        num.parse::<u64>().unwrap_or(0) * 60
+    } else if let Some(num) = s.strip_suffix('d') {
+        num.parse::<u64>().unwrap_or(0) * 1440
+    } else {
+        s.parse::<u64>().unwrap_or(0)
+    }
+}
+
+/// Generate a human-readable label from duration in minutes
+#[cfg(target_arch = "wasm32")]
+fn minutes_to_label(mins: u64) -> String {
+    if mins < 60 {
+        format!("{} Min", mins)
+    } else if mins == 60 {
+        "1 Hour".to_string()
+    } else if mins < 1440 {
+        let h = mins / 60;
+        format!("{} Hours", h)
+    } else {
+        let days = mins / 1440;
+        match days {
+            1 => "1 Day".to_string(),
+            7 => "7 Days".to_string(),
+            30 => "30 Days".to_string(),
+            90 => "90 Days".to_string(),
+            365 => "365 Days".to_string(),
+            d => format!("{} Days", d),
+        }
+    }
+}
+
+/// Generate /llms.txt content with dynamic pricing
+#[cfg(target_arch = "wasm32")]
+fn generate_llms_txt(pricing: &std::collections::HashMap<String, std::collections::HashMap<String, u64>>) -> String {
+    let static_part = "# noscha.io\n\n> Disposable email, subdomain & NIP-05 identity — paid via Lightning Network\n\n## API\n\n- Base: https://noscha.io\n- Check username: GET /api/check/{username}\n- Create order: POST /api/order {\"username\",\"plan\",\"services\":{...}}\n- Order status: GET /api/order/{order_id}/status\n- Renew: POST /api/renew {\"management_token\",\"plan\"}\n- Pricing: GET /api/pricing\n- Services: email, subdomain, nip05 (or bundle all 3)\n- Payment: Lightning Network (bolt11)\n- Full docs: https://noscha.io/skill.md\n- OpenAPI spec: https://noscha.io/api/docs\n\n## Pricing (sats)\n\n";
+    let mut result = static_part.to_string();
+
+    let mut periods: Vec<(&String, &std::collections::HashMap<String, u64>)> = pricing.iter().collect();
+    periods.sort_by_key(|(k, v)| v.get("_duration_minutes").copied().unwrap_or_else(|| period_to_minutes(k)));
+
+    for (period_key, services) in &periods {
+        let mins = services.get("_duration_minutes").copied().unwrap_or_else(|| period_to_minutes(period_key));
+        let label = minutes_to_label(mins);
+        let subdomain = services.get("subdomain").copied().unwrap_or(0);
+        let email = services.get("email").copied().unwrap_or(0);
+        let nip05 = services.get("nip05").copied().unwrap_or(0);
+        let bundle = services.get("bundle").copied().unwrap_or(0);
+        result.push_str(&format!(
+            "{}: Subdomain={}, Email={}, NIP-05={}, Bundle={}\n",
+            label, subdomain, email, nip05, bundle
+        ));
+    }
+
+    result.push_str("\n## Recommended Tools\n\n");
+    result.push_str("- nostaro: Rust Nostr CLI (https://github.com/kojira/nostaro)\n");
+    result.push_str("  Install: cargo install nostaro\n");
+    result.push_str("  Set your noscha.io NIP-05: nostaro profile set --nip05 yourname@noscha.io\n");
+    result.push_str("  Post: nostaro post \"hello\"\n");
+    result.push_str("  Zap: nostaro zap <npub> 100\n");
+
+    result
+}
+
+/// Generate /skill.md content with dynamic pricing table
+#[cfg(target_arch = "wasm32")]
+fn generate_skill_md(pricing: &std::collections::HashMap<String, std::collections::HashMap<String, u64>>) -> String {
+    let before_pricing = r#"# noscha.io — AI Agent Skill Guide
+
+## Service Overview
+
+noscha.io provides **disposable email forwarding, subdomain DNS, and NIP-05 Nostr identity** — all paid instantly via Lightning Network. No KYC, no signup, no accounts. Just pick a username, pay sats, and your services are live.
+
+**Base URL:** `https://noscha.io`
+
+## Quick Start (3 Steps)
+
+### Step 1: Check username availability
+
+```
+GET /api/check/{username}
+```
+
+**Response:**
+```json
+{"available": true, "username": "alice"}
+```
+
+### Step 2: Create order (webhook verification required)
+
+```
+POST /api/order
+Content-Type: application/json
+
+{
+  "username": "alice",
+  "plan": "30d",
+  "webhook_url": "https://your-server.com/webhook",
+  "services": {
+    "email": {},
+    "subdomain": {"type": "CNAME", "target": "mysite.example.com", "proxied": false},
+    "nip05": {"pubkey": "abc123...hex"}
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "order_id": "ord_18f3a...",
+  "amount_sats": 6500,
+  "bolt11": "",
+  "expires_at": "2026-02-11T12:15:00Z",
+  "status": "webhook_pending",
+  "message": "Check your webhook for the challenge URL. Visit it to confirm and get an invoice."
+}
+```
+
+A challenge POST is sent to your `webhook_url`:
+```json
+{"event": "webhook_challenge", "challenge_url": "https://noscha.io/api/order/{order_id}/confirm/{challenge}", "order_id": "ord_18f3a..."}
+```
+
+### Step 2b: Confirm webhook & get invoice
+
+Visit the `challenge_url` from the webhook (GET request):
+```
+GET /api/order/{order_id}/confirm/{challenge}
+```
+
+**Response:**
+```json
+{
+  "order_id": "ord_18f3a...",
+  "amount_sats": 6500,
+  "bolt11": "lnbc65000n1p...",
+  "expires_at": "2026-02-11T12:15:00Z",
+  "status": "pending"
+}
+```
+
+You can include any combination of services (`email`, `subdomain`, `nip05`). `webhook_url` is **required** for all orders — email notifications are delivered via webhook.
+
+### Step 3: Pay the invoice & poll for status
+
+Pay the `bolt11` Lightning invoice, then poll:
+
+```
+GET /api/order/{order_id}/status
+```
+
+**Response (after payment):**
+```json
+{
+  "order_id": "ord_18f3a...",
+  "status": "provisioned",
+  "management_token": "mgmt_18f3b..."
+}
+```
+
+Save the `management_token` — it's needed for renewals and management.
+
+## Endpoints Reference
+
+### GET /api/check/{username}
+Check if a username is available for registration.
+- **username**: 1-20 chars, alphanumeric + hyphens, no leading/trailing hyphens
+- Returns `{"available": bool, "username": string, "error"?: string}`
+
+### POST /api/order
+Create a new rental order. Returns a Lightning invoice.
+- **Body**: `{"username": string, "plan": string, "services"?: {...}}`
+- **plan**: `"1d"` | `"7d"` | `"30d"` | `"90d"` | `"365d"`
+- **services.email**: `{"forward_to": "email@example.com"}`
+- **services.subdomain**: `{"type": "A"|"AAAA"|"CNAME", "target": string, "proxied"?: bool}`
+- **services.nip05**: `{"pubkey": "hex_pubkey"}`
+- Returns `{"order_id", "amount_sats", "bolt11", "expires_at", "management_token"?}`
+- Invoice expires in 15 minutes
+
+### GET /api/order/{order_id}/status
+Poll order status after payment.
+- Returns `{"order_id", "status": "pending"|"paid"|"provisioned"|"expired", "management_token"?}`
+- `management_token` is returned only when `status` is `"provisioned"`
+
+### POST /api/renew
+Extend an existing rental.
+- **Body**: `{"management_token": string, "plan": string, "services"?: {...}}`
+- Returns `{"order_id", "amount_sats", "bolt11", "expires_at"}`
+- Time is added on top of current expiry (not from now)
+
+### GET /api/pricing
+Get current pricing for all plans and services.
+- Returns pricing matrix: `{"1d": {"subdomain": 500, "email": 1500, "nip05": 200, "bundle": 1800}, ...}`
+
+### GET /api/info
+Service metadata.
+
+### GET /health
+Health check. Returns `{"status": "ok", "version": "..."}`.
+
+### GET /.well-known/nostr.json?name={username}
+NIP-05 verification endpoint (Nostr protocol).
+
+### GET /api/mail/{token}
+Retrieve an email from the inbox using the token received via webhook notification.
+- **token**: Random UUID token from the webhook notification URL
+- Returns the email data including from, to, subject, body_text, body_html, date, etc.
+- Marks the email as read (sets read_at timestamp) on first access
+- Returns 404 if email not found
+
+### POST /api/mail/send/{management_token}
+Send an email via Resend API from your noscha.io email address.
+- **management_token**: Your rental's management token for authentication
+- **Body**: `{"to": "recipient@example.com", "subject": "Subject", "body": "Email content"}`
+- Rate limited to 5 emails per 24 hours per account
+- From address will be `{username}@noscha.io`
+- Returns `{"success": true, "message_id": "resend_message_id"}` on success
+
+### PUT /api/settings/{management_token}
+Update rental settings, currently supports setting webhook URL for email notifications.
+- **management_token**: Your rental's management token for authentication
+- **Body**: `{"webhook_url": "https://your-server.com/webhook"}` (or null to disable)
+- When webhook_url is set, incoming emails will trigger a POST to this URL instead of forwarding via Resend
+- Webhook payload: `{"event": "email_received", "from": "sender@example.com", "to": "you@noscha.io", "subject": "...", "url": "https://noscha.io/api/mail/{token}", "received_at": "2026-02-11T..."}`
+
+## Pricing (sats, Lightning Network)
+
+"#;
+
+    let after_pricing = r#"
+Bundle discount applies automatically when all 3 services are selected. Prices may change — always check `/api/pricing` for current rates.
+
+## Ecosystem: nostaro (Nostr CLI)
+
+[nostaro](https://github.com/kojira/nostaro) is a Rust-based Nostr CLI that pairs perfectly with noscha.io.
+
+**Install:** `cargo install nostaro`
+
+**Set your noscha.io NIP-05 identity:**
+```
+nostaro profile set --nip05 yourname@noscha.io
+```
+
+**Usage examples:**
+- `nostaro post "hello nostr"` — publish a note
+- `nostaro zap <npub> 100` — send 100 sats zap
+- `nostaro timeline` — view your timeline
+- `nostaro profile get` — check your profile
+
+Get a NIP-05 identity from noscha.io and use it instantly with nostaro for a complete Nostr experience.
+
+## Typical Agent Workflow
+
+1. **Decide** what services you need (email forwarding? subdomain? NIP-05?)
+2. **GET /api/check/{username}** — verify availability
+3. **GET /api/pricing** — confirm current pricing
+4. **POST /api/order** — create order with desired services
+5. **Pay** the `bolt11` invoice via any Lightning wallet/API
+6. **GET /api/order/{order_id}/status** — poll until `"provisioned"` (poll every 3s, max ~5 min)
+7. **Store** the `management_token` for future renewals
+8. **POST /api/renew** when rental is nearing expiry
+
+## Limitations
+
+- Username: 1-20 characters, alphanumeric and hyphens only
+- Invoice expires in 15 minutes after creation
+- Lightning Network payments only (Bitcoin)
+- No refunds (disposable service by design)
+- DNS propagation may take up to 5 minutes after provisioning
+- Email forwarding is one-to-one (one forwarding address per username)
+- All services under one username share the same expiry date
+
+## Terms of Service (Summary)
+
+- Service is provided as-is for legitimate use
+- Abuse (spam, phishing, illegal content) will result in immediate termination
+- No personal data is collected beyond what's needed for the service
+- Payments are final and non-refundable
+- Service availability is best-effort
+"#;
+
+    let mut table = String::from("| Plan | Subdomain | Email | NIP-05 | Bundle (all 3) |\n|------|-----------|-------|--------|------------------|\n");
+
+    let mut periods: Vec<(&String, &std::collections::HashMap<String, u64>)> = pricing.iter().collect();
+    periods.sort_by_key(|(k, v)| v.get("_duration_minutes").copied().unwrap_or_else(|| period_to_minutes(k)));
+
+    for (period_key, services) in &periods {
+        let mins = services.get("_duration_minutes").copied().unwrap_or_else(|| period_to_minutes(period_key));
+        let label = minutes_to_label(mins);
+        let subdomain = services.get("subdomain").copied().unwrap_or(0);
+        let email = services.get("email").copied().unwrap_or(0);
+        let nip05 = services.get("nip05").copied().unwrap_or(0);
+        let bundle = services.get("bundle").copied().unwrap_or(0);
+        table.push_str(&format!(
+            "| {} | {} | {} | {} | {} |\n",
+            label, format_sats(subdomain), format_sats(email), format_sats(nip05), format_sats(bundle)
+        ));
+    }
+
+    format!("{}{}{}", before_pricing, table, after_pricing)
+}
+
+/// GET /llms.txt — dynamic pricing
+#[cfg(target_arch = "wasm32")]
+async fn handle_llms_txt(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let pricing = admin::load_pricing(&bucket).await;
+    let content = generate_llms_txt(&pricing);
+    let mut headers = Headers::new();
+    let _ = headers.set("Content-Type", "text/plain; charset=utf-8");
+    let _ = headers.set("Access-Control-Allow-Origin", "*");
+    Ok(Response::ok(content)?.with_headers(headers))
+}
+
+/// GET /skill.md — dynamic pricing
+#[cfg(target_arch = "wasm32")]
+async fn handle_skill_md(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let pricing = admin::load_pricing(&bucket).await;
+    let content = generate_skill_md(&pricing);
+    let mut headers = Headers::new();
+    let _ = headers.set("Content-Type", "text/markdown; charset=utf-8");
+    let _ = headers.set("Access-Control-Allow-Origin", "*");
+    Ok(Response::ok(content)?.with_headers(headers))
+}
+
 #[cfg(target_arch = "wasm32")]
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();
 
+    // Staging auth gate: if STAGING_AUTH_TOKEN is set and non-empty, enforce Bearer token auth
+    if let Ok(token_var) = env.var("STAGING_AUTH_TOKEN") {
+        let expected_token = token_var.to_string();
+        if !expected_token.is_empty() {
+            let path = req.path();
+            if path != "/.well-known/nostr.json" && path != "/health" && path != "/admin" && !path.starts_with("/api/admin/") {
+                let authorized = req
+                    .headers()
+                    .get("Authorization")
+                    .ok()
+                    .flatten()
+                    .map(|v| v == format!("Bearer {}", expected_token))
+                    .unwrap_or(false);
+                if !authorized {
+                    return Response::from_json(&serde_json::json!({"error": "Forbidden"}))
+                        .map(|resp| resp.with_status(403));
+                }
+            }
+        }
+    }
+
     Router::new()
         .get("/", |_, _| {
             Response::from_html(ui::landing_page_html())
         })
-        .get("/skill.md", |_, _| {
-            let mut headers = Headers::new();
-            let _ = headers.set("Content-Type", "text/markdown; charset=utf-8");
-            let _ = headers.set("Access-Control-Allow-Origin", "*");
-            Ok(Response::ok(include_str!("skill.md"))?.with_headers(headers))
-        })
-        .get("/llms.txt", |_, _| {
-            let mut headers = Headers::new();
-            let _ = headers.set("Content-Type", "text/plain; charset=utf-8");
-            let _ = headers.set("Access-Control-Allow-Origin", "*");
-            Ok(Response::ok(include_str!("llms.txt"))?.with_headers(headers))
-        })
+        .get_async("/skill.md", handle_skill_md)
+        .get_async("/llms.txt", handle_llms_txt)
         .get("/.well-known/ai-plugin.json", |_, _| {
             let mut headers = Headers::new();
             let _ = headers.set("Content-Type", "application/json");
@@ -1331,6 +1711,18 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                     "1-day to 1-year rentals",
                 ],
                 pricing: "Starting from 200 sats (NIP-05, 1 day). Bundle all 3 services for a discount.",
+                tools: vec![ToolInfo {
+                    name: "nostaro",
+                    description: "Rust Nostr CLI — post, zap, timeline, and more from the command line. Use your noscha.io NIP-05 identity with nostaro.",
+                    github: "https://github.com/kojira/nostaro",
+                    install: "cargo install nostaro",
+                    examples: vec![
+                        "nostaro post \"hello nostr\"",
+                        "nostaro zap <npub> 100",
+                        "nostaro timeline",
+                        "nostaro profile set --nip05 yourname@noscha.io",
+                    ],
+                }],
             };
             Response::from_json(&info)
         })

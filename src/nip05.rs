@@ -4,7 +4,7 @@ use serde::Serialize;
 use worker::*;
 
 #[cfg(target_arch = "wasm32")]
-use crate::types::Rental;
+use crate::types::{is_expired_iso, Rental};
 
 /// Validates a hex-encoded pubkey string: must be exactly 64 chars and all hex digits
 pub fn validate_pubkey_hex(s: &str) -> bool {
@@ -59,9 +59,7 @@ pub async fn handle_nip05(
             let rental: Rental = serde_json::from_str(&text)
                 .map_err(|e| Error::RustError(e.to_string()))?;
 
-            let now_ms = js_sys::Date::now();
-            let expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
-            if expires_date.get_time() <= now_ms {
+            if rental.status != "active" || is_expired_iso(&rental.expires_at) {
                 return Response::error("Username not found", 404)
                     .map(|mut res| {
                         let _ = res.headers_mut().set("Access-Control-Allow-Origin", "*");
@@ -128,7 +126,6 @@ pub async fn handle_nip05_options(_req: Request, _ctx: RouteContext<()>) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Plan, Rental, RentalServices};
 
     #[test]
     fn test_validate_pubkey_hex_valid() {

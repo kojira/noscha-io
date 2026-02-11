@@ -16,8 +16,8 @@ bucket_name = "noscha-data"
 
 [vars]
 DOMAIN = "noscha.io"
-# Set MOCK_PAYMENT = "true" for development/testing
-# MOCK_PAYMENT = "true"
+# MOCK_PAYMENT is set via `wrangler secret put` (default: false for production)
+# MOCK_PAYMENT = "true"  # Uncomment for local dev only
 
 # Secrets (set via `wrangler secret put`):
 # COINOS_API_TOKEN

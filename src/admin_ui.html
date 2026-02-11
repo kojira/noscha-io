@@ -126,19 +126,20 @@ tr:hover td{background:rgba(139,92,246,.05)}
     <div class="tbl-wrap">
       <table id="pricing-table">
         <thead>
-          <tr><th>Duration</th><th>Subdomain</th><th>Email</th><th>NIP-05</th><th style="color:var(--green)">Bundle</th></tr>
+          <tr><th>Duration</th><th>Subdomain</th><th>Email</th><th>NIP-05</th><th style="color:var(--green)">Bundle</th><th>Del</th></tr>
         </thead>
-        <tbody>
-          <tr><td>5 Min</td><td><input type="number" id="p-5m-subdomain" min="0"></td><td><input type="number" id="p-5m-email" min="0"></td><td><input type="number" id="p-5m-nip05" min="0"></td><td><input type="number" id="p-5m-bundle" min="0"></td></tr>
-          <tr><td>30 Min</td><td><input type="number" id="p-30m-subdomain" min="0"></td><td><input type="number" id="p-30m-email" min="0"></td><td><input type="number" id="p-30m-nip05" min="0"></td><td><input type="number" id="p-30m-bundle" min="0"></td></tr>
-          <tr><td>1 Hour</td><td><input type="number" id="p-1h-subdomain" min="0"></td><td><input type="number" id="p-1h-email" min="0"></td><td><input type="number" id="p-1h-nip05" min="0"></td><td><input type="number" id="p-1h-bundle" min="0"></td></tr>
-          <tr><td>1 Day</td><td><input type="number" id="p-1d-subdomain" min="0"></td><td><input type="number" id="p-1d-email" min="0"></td><td><input type="number" id="p-1d-nip05" min="0"></td><td><input type="number" id="p-1d-bundle" min="0"></td></tr>
-          <tr><td>7 Days</td><td><input type="number" id="p-7d-subdomain" min="0"></td><td><input type="number" id="p-7d-email" min="0"></td><td><input type="number" id="p-7d-nip05" min="0"></td><td><input type="number" id="p-7d-bundle" min="0"></td></tr>
-          <tr><td>30 Days</td><td><input type="number" id="p-30d-subdomain" min="0"></td><td><input type="number" id="p-30d-email" min="0"></td><td><input type="number" id="p-30d-nip05" min="0"></td><td><input type="number" id="p-30d-bundle" min="0"></td></tr>
-          <tr><td>90 Days</td><td><input type="number" id="p-90d-subdomain" min="0"></td><td><input type="number" id="p-90d-email" min="0"></td><td><input type="number" id="p-90d-nip05" min="0"></td><td><input type="number" id="p-90d-bundle" min="0"></td></tr>
-          <tr><td>365 Days</td><td><input type="number" id="p-365d-subdomain" min="0"></td><td><input type="number" id="p-365d-email" min="0"></td><td><input type="number" id="p-365d-nip05" min="0"></td><td><input type="number" id="p-365d-bundle" min="0"></td></tr>
+        <tbody id="pricing-body">
         </tbody>
       </table>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center;margin-top:.75rem;flex-wrap:wrap">
+      <input type="text" id="new-period-key" placeholder="Period key (e.g. 2h)" style="width:100px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.85rem;padding:.4rem .5rem;outline:none">
+      <input type="number" id="new-period-dur" placeholder="Minutes" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.85rem;padding:.4rem .5rem;outline:none">
+      <input type="number" id="new-period-sub" placeholder="Subdomain" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.85rem;padding:.4rem .5rem;outline:none">
+      <input type="number" id="new-period-email" placeholder="Email" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.85rem;padding:.4rem .5rem;outline:none">
+      <input type="number" id="new-period-nip" placeholder="NIP-05" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.85rem;padding:.4rem .5rem;outline:none">
+      <input type="number" id="new-period-bundle" placeholder="Bundle" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.85rem;padding:.4rem .5rem;outline:none">
+      <button class="save-btn" onclick="addPeriod()">Add</button>
     </div>
     <button class="save-btn" id="save-pricing-btn" style="margin-top:1rem">Save Pricing</button>
     <span id="pricing-status" style="margin-left:.75rem;font-size:.8rem;color:var(--muted)"></span>
@@ -193,6 +194,7 @@ tr:hover td{background:rgba(139,92,246,.05)}
   var currentPage = 1;
   var currentFilter = '';
   var pageLimit = 20;
+  var pricingData = {};
 
   var loginScreen = document.getElementById('login-screen');
   var dashboard = document.getElementById('dashboard');
@@ -312,38 +314,82 @@ tr:hover td{background:rgba(139,92,246,.05)}
     });
   }
 
+  function parseDurationMinutes(key) {
+    var m = key.match(/^(\d+)(m|h|d)$/);
+    if (!m) return 0;
+    var n = parseInt(m[1], 10);
+    if (m[2] === 'h') return n * 60;
+    if (m[2] === 'd') return n * 1440;
+    return n;
+  }
+
   function loadPricing() {
     apiFetch('/api/admin/pricing').then(function(d) {
-      var periods = ['5m','30m','1h','1d','7d','30d','90d','365d'];
-      var services = ['subdomain','email','nip05','bundle'];
-      periods.forEach(function(p) {
-        services.forEach(function(s) {
-          var el = document.getElementById('p-'+p+'-'+s);
-          if(el && d[p]) el.value = d[p][s] || '';
-        });
-      });
+      pricingData = d;
+      renderPricing();
     });
   }
+
+  function renderPricing() {
+    var body = document.getElementById('pricing-body');
+    var keys = Object.keys(pricingData);
+    keys.sort(function(a, b) { return parseDurationMinutes(a) - parseDurationMinutes(b); });
+    var html = '';
+    keys.forEach(function(p) {
+      var row = pricingData[p];
+      html += '<tr>';
+      html += '<td>' + esc(p) + '</td>';
+      html += '<td><input type="number" data-period="' + esc(p) + '" data-svc="subdomain" value="' + (row.subdomain || 0) + '"></td>';
+      html += '<td><input type="number" data-period="' + esc(p) + '" data-svc="email" value="' + (row.email || 0) + '"></td>';
+      html += '<td><input type="number" data-period="' + esc(p) + '" data-svc="nip05" value="' + (row.nip05 || 0) + '"></td>';
+      html += '<td><input type="number" data-period="' + esc(p) + '" data-svc="bundle" value="' + (row.bundle || 0) + '"></td>';
+      html += '<td><button class="act-btn act-revoke" onclick="deletePeriod(\'' + esc(p) + '\')">X</button></td>';
+      html += '</tr>';
+    });
+    body.innerHTML = html;
+  }
+
+  window.deletePeriod = function(key) {
+    delete pricingData[key];
+    renderPricing();
+  };
+
+  window.addPeriod = function() {
+    var key = document.getElementById('new-period-key').value.trim();
+    var dur = parseInt(document.getElementById('new-period-dur').value, 10);
+    var sub = parseInt(document.getElementById('new-period-sub').value, 10) || 0;
+    var email = parseInt(document.getElementById('new-period-email').value, 10) || 0;
+    var nip = parseInt(document.getElementById('new-period-nip').value, 10) || 0;
+    var bundle = parseInt(document.getElementById('new-period-bundle').value, 10) || 0;
+    if (!key) { toast('Period key is required', 'err'); return; }
+    if (!dur || dur < 1) { toast('Minutes must be >= 1', 'err'); return; }
+    pricingData[key] = { subdomain: sub, email: email, nip05: nip, bundle: bundle, _duration_minutes: dur };
+    document.getElementById('new-period-key').value = '';
+    document.getElementById('new-period-dur').value = '';
+    document.getElementById('new-period-sub').value = '';
+    document.getElementById('new-period-email').value = '';
+    document.getElementById('new-period-nip').value = '';
+    document.getElementById('new-period-bundle').value = '';
+    renderPricing();
+  };
 
   document.getElementById('save-pricing-btn').addEventListener('click', function() {
     var btn = this;
     var status = document.getElementById('pricing-status');
     btn.disabled = true;
     status.textContent = 'Saving...';
-    var periods = ['5m','30m','1h','1d','7d','30d','90d','365d'];
-    var services = ['subdomain','email','nip05','bundle'];
-    var pricing = {};
-    periods.forEach(function(p) {
-      pricing[p] = {};
-      services.forEach(function(s) {
-        var el = document.getElementById('p-'+p+'-'+s);
-        pricing[p][s] = parseInt(el.value, 10) || 0;
-      });
+    // Update pricingData from current input values
+    var inputs = document.querySelectorAll('#pricing-table input[data-period]');
+    inputs.forEach(function(el) {
+      var p = el.getAttribute('data-period');
+      var s = el.getAttribute('data-svc');
+      if (!pricingData[p]) pricingData[p] = {};
+      pricingData[p][s] = parseInt(el.value, 10) || 0;
     });
     apiFetch('/api/admin/pricing', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(pricing)
+      body: JSON.stringify(pricingData)
     }).then(function() {
       status.textContent = 'Saved ✓';
       status.style.color = 'var(--green)';
