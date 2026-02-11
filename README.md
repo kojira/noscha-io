@@ -8,7 +8,7 @@ Lightning-powered disposable identity services for Nostr. Rent a username and ge
 - **Subdomain DNS** — `username.noscha.io` pointing to your server (A/AAAA/CNAME)
 - **NIP-05 Verification** — `username@noscha.io` Nostr identity verification
 - **Lightning Payments** — Pay with Bitcoin Lightning via [coinos](https://coinos.io)
-- **Flexible Plans** — 1 day to 1 year rentals
+- **Flexible Plans** — 1 hour to 1 year rentals
 - **Admin Dashboard** — NIP-07 authenticated admin panel
 - **Auto-cleanup** — Expired rentals and DNS records cleaned up automatically
 
@@ -60,6 +60,7 @@ The following secrets are required. Store them in `.env` (loaded automatically b
 | `ADMIN_API_TOKEN` | Bearer token for Admin API access |
 | `STAGING_AUTH_TOKEN` | Auth token for staging environment gate |
 | `DISCORD_WEBHOOK_URL` | Discord webhook for notifications |
+| `RESEND_API_KEY` | Resend API key for email sending (required for send feature) |
 
 ## Environment Variables
 
@@ -116,7 +117,7 @@ Both methods require the `ADMIN_PUBKEY` to match.
 cargo test --lib
 ```
 
-Currently **83 tests** covering validation, types, DNS, email, NIP-05, and admin logic.
+Currently **76 tests** covering validation, types, DNS, email, NIP-05, and admin logic.
 
 ### E2E Tests (Staging)
 
