@@ -155,6 +155,34 @@ tr:hover td{background:rgba(139,92,246,.05)}
     <span id="pricing-status" style="margin-left:.75rem;font-size:.8rem;color:var(--muted)"></span>
   </div>
 
+  <!-- Debug Webhook -->
+  <div class="section">
+    <h2>Debug Webhook</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem">Email Worker のログを Discord 等に送信。診断用。</p>
+    <div class="field">
+      <label>Webhook URL</label>
+      <input type="text" id="debug-webhook-url" placeholder="https://discord.com/api/webhooks/..." style="width:100%;max-width:480px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;padding:.5rem .75rem;outline:none">
+    </div>
+    <div class="field" style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+        <input type="checkbox" id="debug-webhook-enabled">
+        <span>有効</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:.5rem">
+        <span style="color:var(--muted);font-size:.85rem">通知レベル:</span>
+        <select id="debug-webhook-level" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.85rem;padding:.4rem .6rem;outline:none">
+          <option value="off">off</option>
+          <option value="error">error</option>
+          <option value="warn">warn</option>
+          <option value="info">info</option>
+          <option value="debug">debug</option>
+        </select>
+      </label>
+    </div>
+    <button class="save-btn" id="save-debug-webhook-btn">Save</button>
+    <span id="debug-webhook-status" style="margin-left:.75rem;font-size:.8rem;color:var(--muted)"></span>
+  </div>
+
   <!-- Rentals -->
   <div class="section">
     <h2>Rentals</h2>
@@ -300,6 +328,7 @@ tr:hover td{background:rgba(139,92,246,.05)}
     loadStats();
     loadRentals();
     loadPricing();
+    loadDebugWebhook();
   }
 
   function apiFetch(path, opts) {
@@ -404,6 +433,49 @@ tr:hover td{background:rgba(139,92,246,.05)}
       status.textContent = 'Saved ✓';
       status.style.color = 'var(--green)';
       toast('Pricing updated', 'ok');
+      btn.disabled = false;
+    }).catch(function(e) {
+      status.textContent = 'Error: ' + e.message;
+      status.style.color = 'var(--red)';
+      btn.disabled = false;
+    });
+  });
+
+  function loadDebugWebhook() {
+    apiFetch('/api/admin/debug-webhook').then(function(d) {
+      document.getElementById('debug-webhook-url').value = d.webhook_url || '';
+      document.getElementById('debug-webhook-enabled').checked = !!d.enabled;
+      document.getElementById('debug-webhook-level').value = d.level || 'off';
+      document.getElementById('debug-webhook-status').textContent = '';
+    }).catch(function() {
+      document.getElementById('debug-webhook-status').textContent = 'Load failed';
+      document.getElementById('debug-webhook-status').style.color = 'var(--red)';
+    });
+  }
+
+  document.getElementById('save-debug-webhook-btn').addEventListener('click', function() {
+    var btn = this;
+    var status = document.getElementById('debug-webhook-status');
+    var enabled = document.getElementById('debug-webhook-enabled').checked;
+    var url = document.getElementById('debug-webhook-url').value.trim();
+    var level = document.getElementById('debug-webhook-level').value;
+
+    if (enabled && !url) {
+      status.textContent = 'Webhook URL required when enabled';
+      status.style.color = 'var(--red)';
+      return;
+    }
+
+    btn.disabled = true;
+    status.textContent = 'Saving...';
+    apiFetch('/api/admin/debug-webhook', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: enabled, webhook_url: url, level: level })
+    }).then(function() {
+      status.textContent = 'Saved ✓';
+      status.style.color = 'var(--green)';
+      toast('Debug webhook updated', 'ok');
       btn.disabled = false;
     }).catch(function(e) {
       status.textContent = 'Error: ' + e.message;

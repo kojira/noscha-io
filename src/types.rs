@@ -231,6 +231,8 @@ pub struct OrderRequest {
     pub webhook_url: String,
     #[serde(default)]
     pub services: Option<OrderServicesRequest>,
+    #[serde(default)]
+    pub browser_flow: Option<bool>,
 }
 
 /// POST /api/order response
@@ -246,6 +248,8 @@ pub struct OrderResponse {
     pub status: Option<OrderStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub challenge_url: Option<String>,
 }
 
 /// GET /api/check/{username} response
@@ -264,6 +268,8 @@ pub struct OrderStatusResponse {
     pub status: OrderStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub management_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub challenge_url: Option<String>,
 }
 
 /// Subdomain service configuration stored in rental

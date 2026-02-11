@@ -77,22 +77,7 @@ async function handleAuthVerify(request, env) {
     const body = await request.json();
     const event = JSON.parse(body.event);
 
-    // Check pubkey matches ADMIN_PUBKEY
-    let adminPubkey;
-    try {
-      adminPubkey = env.ADMIN_PUBKEY;
-    } catch {
-      return new Response('ADMIN_PUBKEY not configured', { status: 500 });
-    }
-    if (!adminPubkey) {
-      return new Response('ADMIN_PUBKEY not configured', { status: 500 });
-    }
-
-    if (event.pubkey !== adminPubkey) {
-      return new Response('Unauthorized: pubkey not allowed', { status: 403 });
-    }
-
-    // Verify challenge exists in R2
+    // Verify challenge exists in R2 (any valid NIP-07 user can get staging session)
     const challenge = (event.content || '').trim();
     if (!challenge) {
       return new Response('Missing challenge', { status: 400 });
@@ -122,9 +107,20 @@ async function handleAuthVerify(request, env) {
 }
 
 /**
- * Check if request has valid staging auth cookie
+ * Check if request has valid staging auth: Bearer token or cookie
  */
 async function isAuthenticated(request, env) {
+  // Bearer STAGING_AUTH_TOKEN で許可
+  try {
+    const authHeader = request.headers.get("Authorization");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.slice(7);
+      const stagingToken = env.STAGING_AUTH_TOKEN;
+      if (stagingToken && token === stagingToken) return true;
+    }
+  } catch (_) {}
+
+  // Cookie チェック
   const cookie = request.headers.get('Cookie') || '';
   const match = cookie.match(/noscha_auth_token=([^;]+)/);
   if (!match) return false;
@@ -258,11 +254,23 @@ async function handleSendMail(request, env, username) {
   }
 }
 
-// Create a subclass that adds the email handler and auth gate
-class UnifiedWorker extends WorkerClass {
-  async fetch(request) {
+// Export as plain ES module object so CF runtime can route ALL events
+// including email (which WorkerEntrypoint-based classes don't support).
+//
+// WorkerClass (from build/index.js) is a Proxy-wrapped class extending
+// WorkerEntrypoint.  Its prototype.fetch/scheduled read this.env / this.ctx
+// set by the CF runtime during construction.  Since we export a plain object
+// instead of the class, we create a fresh instance per request via the CF
+// runtime constructor convention:  new WorkerClass(ctx, env)  — the Proxy
+// construct trap passes these through to Reflect.construct(A, [ctx, env]).
+// Alternatively, we can create an instance once and patch env/ctx before
+// each call.  The safest approach: create per-invocation to avoid shared
+// mutable state.
+
+export default {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const requireAuth = this.env.REQUIRE_AUTH === 'true';
+    const requireAuth = env.REQUIRE_AUTH === 'true';
 
     // Handle mail API routes
     if (url.pathname.startsWith("/api/mail/")) {
@@ -271,43 +279,48 @@ class UnifiedWorker extends WorkerClass {
       // POST /api/mail/{username}/send
       if (request.method === "POST" && pathParts.length === 4 && pathParts[3] === "send") {
         const username = pathParts[2];
-        return handleSendMail(request, this.env, username);
+        return handleSendMail(request, env, username);
       }
 
       // GET /api/mail/{username}/{mail_id}
       if (request.method === "GET" && pathParts.length === 4) {
         const username = pathParts[2];
         const mailId = pathParts[3];
-        return handleGetMailById(request, this.env, username, mailId);
+        return handleGetMailById(request, env, username, mailId);
       }
 
       // GET /api/mail/{username}
       if (request.method === "GET" && pathParts.length === 3) {
         const username = pathParts[2];
-        return handleListMail(request, this.env, username);
+        return handleListMail(request, env, username);
       }
     }
 
     if (requireAuth) {
-      // POST /api/auth/verify — always allowed (auth endpoint)
+      // Auth flow — always allowed (no gate)
       if (url.pathname === '/api/auth/verify' && request.method === 'POST') {
-        return handleAuthVerify(request, this.env);
+        return handleAuthVerify(request, env);
       }
-
-      // /health — always allowed
       if (url.pathname === '/health') {
-        return super.fetch(request);
+        const worker = new WorkerClass(ctx, env);
+        return worker.fetch(request);
       }
-
-      // API endpoints — allow through (they have their own auth)
-      // But protect HTML pages and root
-      const isApi = url.pathname.startsWith('/api/');
       const isWellKnown = url.pathname.startsWith('/.well-known/');
       const isAgentDoc = url.pathname === '/skill.md' || url.pathname === '/llms.txt';
-
-      if (!isApi && !isWellKnown && !isAgentDoc) {
-        const authed = await isAuthenticated(request, this.env);
+      const isAdminAuth = (url.pathname === '/api/admin/challenge' || url.pathname === '/api/admin/login') && request.method === 'POST';
+      if (isWellKnown || isAgentDoc || isAdminAuth) {
+        // Well-known, docs, admin auth flow — allow through
+      } else {
+        // All other paths (HTML + API): require Bearer or NIP-07 cookie
+        const authed = await isAuthenticated(request, env);
         if (!authed) {
+          const isApi = url.pathname.startsWith('/api/');
+          if (isApi) {
+            return new Response(JSON.stringify({ error: "Unauthorized" }), {
+              status: 401,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
           return new Response(AUTH_LOGIN_HTML, {
             headers: { 'Content-Type': 'text/html;charset=UTF-8' },
           });
@@ -315,26 +328,27 @@ class UnifiedWorker extends WorkerClass {
       }
     }
 
-    return super.fetch(request);
-  }
+    const worker = new WorkerClass(ctx, env);
+    return worker.fetch(request);
+  },
 
-  async email(message) {
-    return emailShim.email(message, this.env, this.ctx);
-  }
+  async email(message, env, ctx) {
+    return emailShim.email(message, env, ctx);
+  },
 
-  async scheduled(controller) {
+  async scheduled(controller, env, ctx) {
     try {
-      const list = await this.env.BUCKET.list({ prefix: "inbox/" });
+      const list = await env.BUCKET.list({ prefix: "inbox/" });
       const now = new Date();
       const ONE_HOUR_MS = 60 * 60 * 1000;
 
       for (const obj of list.objects) {
         try {
-          const email = JSON.parse(await this.env.BUCKET.get(obj.key).then(r => r?.text()));
+          const email = JSON.parse(await env.BUCKET.get(obj.key).then(r => r?.text()));
           if (!email) continue;
           const createdAt = new Date(email.created_at);
           if (now - createdAt >= ONE_HOUR_MS) {
-            await this.env.BUCKET.delete(obj.key);
+            await env.BUCKET.delete(obj.key);
             console.log(`Deleted old email: ${obj.key}`);
           }
         } catch (e) {
@@ -345,11 +359,8 @@ class UnifiedWorker extends WorkerClass {
       console.error(`Email cleanup error: ${e.message}`);
     }
 
-    // Call parent scheduled method if it exists
-    if (super.scheduled) {
-      await super.scheduled(controller);
-    }
+    // Call Rust scheduled handler
+    const worker = new WorkerClass(ctx, env);
+    return worker.scheduled(controller);
   }
-}
-
-export default UnifiedWorker;
+};

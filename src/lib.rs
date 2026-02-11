@@ -21,7 +21,8 @@ use worker::*;
 
 #[cfg(target_arch = "wasm32")]
 use admin::{
-    handle_admin_ban, handle_admin_challenge, handle_admin_extend, handle_admin_login,
+    handle_admin_ban, handle_admin_challenge, handle_admin_debug_webhook_get,
+    handle_admin_debug_webhook_put, handle_admin_extend, handle_admin_login,
     handle_admin_page, handle_admin_pricing_get, handle_admin_pricing_put,
     handle_admin_rentals, handle_admin_provision, handle_admin_revoke, handle_admin_stats, handle_admin_unban,
     handle_public_pricing,
@@ -316,28 +317,47 @@ async fn handle_create_order(
 
     // Send challenge to webhook_url (best effort)
     let challenge_url = format!("https://{}/api/order/{}/confirm/{}", domain, order_id, challenge);
-    let inner = serde_json::json!({
-        "event": "webhook_challenge",
-        "challenge_url": challenge_url,
-        "order_id": order_id,
-    });
-    let challenge_body = serde_json::json!({
-        "content": inner.to_string(),
-        "event": "webhook_challenge",
-        "challenge_url": challenge_url,
-        "order_id": order_id,
-    });
-    let headers = Headers::new();
-    let _ = headers.set("Content-Type", "application/json; charset=utf-8");
-    let challenge_req = Request::new_with_init(
-        &body.webhook_url,
-        RequestInit::new()
-            .with_method(Method::Post)
-            .with_headers(headers)
-            .with_body(Some(wasm_bindgen::JsValue::from_str(&challenge_body.to_string()))),
-    );
-    if let Ok(r) = challenge_req {
-        let _ = Fetch::Request(r).send().await;
+    let is_browser_flow = body.browser_flow == Some(true);
+
+    if is_browser_flow {
+        // Browser flow: send plain text (URL only)
+        let headers = Headers::new();
+        let _ = headers.set("Content-Type", "text/plain; charset=utf-8");
+        let challenge_req = Request::new_with_init(
+            &body.webhook_url,
+            RequestInit::new()
+                .with_method(Method::Post)
+                .with_headers(headers)
+                .with_body(Some(wasm_bindgen::JsValue::from_str(&challenge_url))),
+        );
+        if let Ok(r) = challenge_req {
+            let _ = Fetch::Request(r).send().await;
+        }
+    } else {
+        // API flow: send JSON
+        let inner = serde_json::json!({
+            "event": "webhook_challenge",
+            "challenge_url": challenge_url,
+            "order_id": order_id,
+        });
+        let challenge_body = serde_json::json!({
+            "content": inner.to_string(),
+            "event": "webhook_challenge",
+            "challenge_url": challenge_url,
+            "order_id": order_id,
+        });
+        let headers = Headers::new();
+        let _ = headers.set("Content-Type", "application/json; charset=utf-8");
+        let challenge_req = Request::new_with_init(
+            &body.webhook_url,
+            RequestInit::new()
+                .with_method(Method::Post)
+                .with_headers(headers)
+                .with_body(Some(wasm_bindgen::JsValue::from_str(&challenge_body.to_string()))),
+        );
+        if let Ok(r) = challenge_req {
+            let _ = Fetch::Request(r).send().await;
+        }
     }
 
     Response::from_json(&OrderResponse {
@@ -348,6 +368,7 @@ async fn handle_create_order(
         management_token: None,
         status: Some(OrderStatus::WebhookPending),
         message: Some("Check your webhook for the challenge URL. Visit it to confirm and get an invoice.".to_string()),
+        challenge_url: if is_browser_flow { Some(challenge_url) } else { None },
     })
 }
 
@@ -492,6 +513,7 @@ async fn handle_confirm_webhook(
         management_token: mgmt_token,
         status: Some(order.status),
         message: None,
+        challenge_url: None,
     })
 }
 
@@ -521,6 +543,22 @@ async fn handle_order_status(
                 order.status
             };
 
+            let challenge_url = if status == OrderStatus::WebhookPending {
+                // Reconstruct challenge_url from order data
+                if let Some(ref ch) = order.webhook_challenge {
+                    let domain = ctx
+                        .env
+                        .var("DOMAIN")
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|_| "noscha.io".to_string());
+                    Some(format!("https://{}/api/order/{}/confirm/{}", domain, order.order_id, ch))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             Response::from_json(&OrderStatusResponse {
                 order_id: order.order_id,
                 management_token: if status == OrderStatus::Provisioned {
@@ -529,6 +567,7 @@ async fn handle_order_status(
                     None
                 },
                 status,
+                challenge_url,
             })
         }
         None => Response::error("Order not found", 404),
@@ -1661,26 +1700,7 @@ async fn handle_skill_md(_req: Request, ctx: RouteContext<()>) -> Result<Respons
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();
 
-    // Staging auth gate: if STAGING_AUTH_TOKEN is set and non-empty, enforce Bearer token auth
-    if let Ok(token_var) = env.var("STAGING_AUTH_TOKEN") {
-        let expected_token = token_var.to_string();
-        if !expected_token.is_empty() {
-            let path = req.path();
-            if path != "/.well-known/nostr.json" && path != "/health" && path != "/admin" && !path.starts_with("/api/admin/") {
-                let authorized = req
-                    .headers()
-                    .get("Authorization")
-                    .ok()
-                    .flatten()
-                    .map(|v| v == format!("Bearer {}", expected_token))
-                    .unwrap_or(false);
-                if !authorized {
-                    return Response::from_json(&serde_json::json!({"error": "Forbidden"}))
-                        .map(|resp| resp.with_status(403));
-                }
-            }
-        }
-    }
+    // Staging auth: worker-entry が Bearer/cookie でゲート済み。Rust 側では重複チェック不要。
 
     Router::new()
         .get("/", |_, _| {
@@ -1756,6 +1776,8 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/admin/stats", handle_admin_stats)
         .get_async("/api/admin/pricing", handle_admin_pricing_get)
         .put_async("/api/admin/pricing", handle_admin_pricing_put)
+        .get_async("/api/admin/debug-webhook", handle_admin_debug_webhook_get)
+        .put_async("/api/admin/debug-webhook", handle_admin_debug_webhook_put)
         .post_async("/api/admin/ban/:username", handle_admin_ban)
         .post_async("/api/admin/unban/:username", handle_admin_unban)
         .post_async("/api/admin/extend/:username", handle_admin_extend)

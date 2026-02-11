@@ -217,18 +217,81 @@ function extractMultipartBodies(contentType, body) {
   return { text: textPart, html: htmlPart };
 }
 
+// Debug webhook: Discord embed colors by level (decimal)
+const DEBUG_COLORS = { debug: 0x9e9e9e, info: 0x5865f2, warn: 0xfee75c, error: 0xed4245 };
+const LEVEL_PRIORITY = { off: 0, error: 1, warn: 2, info: 3, debug: 4 };
+
+async function loadDebugWebhookConfig(env) {
+  try {
+    const obj = await env.BUCKET.get("config/debug_webhook.json");
+    if (!obj) return { enabled: false, webhook_url: "", level: "off" };
+    const cfg = JSON.parse(await obj.text());
+    return {
+      enabled: !!cfg.enabled,
+      webhook_url: (cfg.webhook_url || "").trim(),
+      level: (cfg.level || "off").toLowerCase()
+    };
+  } catch {
+    return { enabled: false, webhook_url: "", level: "off" };
+  }
+}
+
+async function debugLog(cfg, level, stage, msg, data = {}) {
+  if (!cfg.enabled || !cfg.webhook_url) return;
+  const cfgPriority = LEVEL_PRIORITY[cfg.level] ?? 0;
+  const logPriority = LEVEL_PRIORITY[level] ?? 0;
+  // Send when log level is at or "above" in severity (e.g. config=info sends info,warn,error)
+  if (logPriority > cfgPriority) return;
+
+  const fields = [
+    { name: "Level", value: level, inline: true },
+    { name: "Stage", value: stage, inline: true }
+  ];
+  for (const [k, v] of Object.entries(data)) {
+    const val = typeof v === "object" ? "```json\n" + JSON.stringify(v, null, 0).slice(0, 900) + "\n```" : String(v).slice(0, 1024);
+    fields.push({ name: k, value: val || "-", inline: k.length <= 10 });
+  }
+
+  const embed = {
+    title: "noscha.io Email Worker",
+    description: `[${level.toUpperCase()}] ${msg}`,
+    color: DEBUG_COLORS[level] ?? 0x9e9e9e,
+    fields,
+    timestamp: new Date().toISOString(),
+    footer: { text: "noscha.io debug" }
+  };
+
+  try {
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 10000);
+    await fetch(cfg.webhook_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ embeds: [embed] }),
+      signal: ctrl.signal
+    });
+    clearTimeout(timeout);
+  } catch (e) {
+    console.error(`Debug webhook send failed: ${e.message}`);
+  }
+}
+
 // Email event handler - called by Cloudflare Email Routing
 // Handles incoming emails via webhook notification
 export default {
   async email(message, env, ctx) {
     const recipient = message.to;
     const username = recipient.split("@")[0].toLowerCase();
+    const cfg = await loadDebugWebhookConfig(env);
+
+    await debugLog(cfg, "debug", "email_received_start", `To: ${recipient}`, { to: recipient, username });
 
     // Lookup rental from R2
     const key = `rentals/${username}.json`;
     const obj = await env.BUCKET.get(key);
 
     if (!obj) {
+      await debugLog(cfg, "warn", "rental_not_found", "Address not found", { username });
       message.setReject("Address not found");
       return;
     }
@@ -236,11 +299,13 @@ export default {
     const rental = JSON.parse(await obj.text());
 
     if (rental.status !== "active") {
+      await debugLog(cfg, "warn", "status_not_active", "Address expired", { username, status: rental.status });
       message.setReject("Address expired");
       return;
     }
 
     if (!rental.services?.email?.enabled) {
+      await debugLog(cfg, "warn", "email_not_enabled", "Email service not enabled", { username });
       message.setReject("Email service not enabled");
       return;
     }
@@ -249,6 +314,7 @@ export default {
     const now = new Date();
     const expires = new Date(rental.expires_at);
     if (now > expires) {
+      await debugLog(cfg, "warn", "expired", "Address expired", { username, expires_at: rental.expires_at });
       message.setReject("Address expired");
       return;
     }
@@ -258,6 +324,7 @@ export default {
     const MAX_EMAIL_SIZE = 256 * 1024; // 256KB
 
     if (rawEmail.length > MAX_EMAIL_SIZE) {
+      await debugLog(cfg, "warn", "email_too_large", "Email too large (256KB limit)", { username, size: rawEmail.length });
       message.setReject("Email too large (256KB limit)");
       return;
     }
@@ -292,42 +359,72 @@ export default {
     try {
       await env.BUCKET.put(`inbox/${username}/${mailId}.json`, JSON.stringify(emailData));
     } catch (e) {
+      await debugLog(cfg, "error", "r2_save_failed", `Failed to save email: ${e.message}`, { username, mail_id: mailId });
       console.error(`Failed to save email to inbox: ${e.message}`);
       message.setReject("Email processing failed");
       return;
     }
 
-    // Check if rental has webhook_url - if so, send notification 
+    await debugLog(cfg, "info", "email_saved", "Email saved to R2", { username, mail_id: mailId, from: message.from, subject });
+
+    // Check if rental has webhook_url - if so, send notification
     if (rental.webhook_url) {
       try {
-        const webhookPayload = {
-          event: "email_received",
-          from: message.from,
-          to: recipient,
-          subject: subject,
-          url: `https://${env.DOMAIN || "noscha.io"}/api/mail/${username}/${mailId}`,
-          received_at: now.toISOString()
-        };
+        const viewUrl = `https://${env.DOMAIN || "noscha.io"}/api/mail/${username}/${mailId}`;
+        const isDiscord = /discord\.com\/api\/webhooks|discordapp\.com\/api\/webhooks/i.test(rental.webhook_url);
+
+        let body;
+        if (isDiscord) {
+          body = JSON.stringify({
+            embeds: [{
+              title: "📧 New email",
+              description: `**From:** ${message.from}\n**Subject:** ${subject}`,
+              url: viewUrl,
+              color: 0x5865f2,
+              fields: [
+                { name: "To", value: recipient, inline: true },
+                { name: "View", value: `[Open](${viewUrl})`, inline: true },
+                { name: "Received", value: now.toISOString(), inline: false }
+              ],
+              timestamp: now.toISOString(),
+              footer: { text: "noscha.io" }
+            }]
+          });
+        } else {
+          body = JSON.stringify({
+            event: "email_received",
+            username,
+            mail_id: mailId,
+            from: message.from,
+            to: recipient,
+            subject,
+            date: now.toISOString(),
+            view_url: viewUrl,
+            received_at: now.toISOString()
+          });
+        }
 
         const webhookRes = await fetch(rental.webhook_url, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(webhookPayload),
+          headers: { "Content-Type": "application/json" },
+          body,
         });
 
         if (!webhookRes.ok) {
+          await debugLog(cfg, "error", "webhook_failed", `Webhook notification failed: ${webhookRes.status}`, { username, status: webhookRes.status });
           console.error(`Webhook notification failed: ${webhookRes.status}`);
+        } else {
+          await debugLog(cfg, "info", "webhook_sent", "Webhook notification sent", { username, mail_id: mailId });
         }
       } catch (e) {
+        await debugLog(cfg, "error", "webhook_failed", `Webhook notification error: ${e.message}`, { username });
         console.error(`Webhook notification error: ${e.message}`);
       }
 
       return; // Done - webhook notified
     }
 
-    // No webhook_url configured - reject
+    await debugLog(cfg, "warn", "no_webhook_configured", "No webhook configured for this address", { username });
     message.setReject("No webhook configured for this address");
   }
 };

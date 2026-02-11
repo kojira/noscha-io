@@ -490,7 +490,8 @@ input:focus{border-color:var(--accent)}
       username: usernameEl.value.trim().toLowerCase(),
       plan: plan,
       services: services,
-      webhook_url: document.getElementById("webhook-url").value.trim()
+      webhook_url: document.getElementById("webhook-url").value.trim(),
+      browser_flow: true
     };
 
     fetch('/api/order',{
@@ -519,27 +520,42 @@ input:focus{border-color:var(--accent)}
     payScreen.style.display = 'block';
     successBox.style.display = 'none';
 
-    bolt11Box.textContent = order.bolt11;
-    payAmount.textContent = order.amount_sats + ' sats';
-    payBadge.textContent = 'waiting for payment';
-    payBadge.className = 'status-badge status-pending';
-    pollInfo.textContent = 'Checking payment status...';
-
-    // QR code
     var qrEl = document.getElementById('qrcode');
     qrEl.innerHTML = '';
-    if(typeof QRCode !== 'undefined'){
-      new QRCode(qrEl, {text: order.bolt11, width:220, height:220, colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.L});
-    }
 
-    // Copy bolt11
-    bolt11Box.onclick = function(){
-      navigator.clipboard.writeText(order.bolt11).then(function(){
-        var orig = bolt11Box.textContent;
-        bolt11Box.textContent = 'Copied!';
-        setTimeout(function(){bolt11Box.textContent = orig;}, 1500);
-      });
-    };
+    if(order.status === 'webhook_pending'){
+      // No QR, no bolt11
+      bolt11Box.style.display = 'none';
+      payBadge.textContent = 'webhook pending';
+      payBadge.className = 'status-badge status-pending';
+      payAmount.textContent = order.amount_sats + ' sats';
+      if(order.challenge_url){
+        pollInfo.innerHTML = 'Click the link below to confirm your order and get an invoice:<br><a href="' + order.challenge_url + '" target="_blank" style="color:#8b5cf6;font-weight:600">' + order.challenge_url + '</a>';
+      } else {
+        pollInfo.textContent = 'A challenge URL has been sent to your webhook. Please confirm it.';
+      }
+    } else {
+      // Normal flow: bolt11 exists
+      bolt11Box.style.display = 'block';
+      bolt11Box.textContent = order.bolt11;
+      payAmount.textContent = order.amount_sats + ' sats';
+      payBadge.textContent = 'waiting for payment';
+      payBadge.className = 'status-badge status-pending';
+      pollInfo.textContent = 'Checking payment status...';
+
+      if(typeof QRCode !== 'undefined'){
+        new QRCode(qrEl, {text: order.bolt11, width:220, height:220, colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.L});
+      }
+
+      // Copy bolt11
+      bolt11Box.onclick = function(){
+        navigator.clipboard.writeText(order.bolt11).then(function(){
+          var orig = bolt11Box.textContent;
+          bolt11Box.textContent = 'Copied!';
+          setTimeout(function(){bolt11Box.textContent = orig;}, 1500);
+        });
+      };
+    }
 
     // Poll status
     startPolling(order.order_id, username);
@@ -558,6 +574,30 @@ input:focus{border-color:var(--accent)}
             payBadge.className = 'status-badge '+(d.status === 'provisioned' ? 'status-provisioned' : 'status-paid');
             pollInfo.textContent = '';
             showSuccess(username);
+          } else if(d.status === 'webhook_pending'){
+            // Update challenge_url if it appeared
+            if(d.challenge_url){
+              pollInfo.innerHTML = 'Click the link below to confirm your order and get an invoice:<br><a href="' + d.challenge_url + '" target="_blank" style="color:#8b5cf6;font-weight:600">' + d.challenge_url + '</a>';
+            }
+          } else if(d.status === 'pending' && d.bolt11){
+            // Transitioned from webhook_pending to pending: show QR and bolt11
+            var qrEl = document.getElementById('qrcode');
+            qrEl.innerHTML = '';
+            if(typeof QRCode !== 'undefined'){
+              new QRCode(qrEl, {text: d.bolt11, width:220, height:220, colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.L});
+            }
+            bolt11Box.textContent = d.bolt11;
+            bolt11Box.style.display = 'block';
+            bolt11Box.onclick = function(){
+              navigator.clipboard.writeText(d.bolt11).then(function(){
+                var orig = bolt11Box.textContent;
+                bolt11Box.textContent = 'Copied!';
+                setTimeout(function(){bolt11Box.textContent = orig;}, 1500);
+              });
+            };
+            payBadge.textContent = 'waiting for payment';
+            payBadge.className = 'status-badge status-pending';
+            pollInfo.textContent = 'Checking payment status...';
           }
         });
     }, 3000);

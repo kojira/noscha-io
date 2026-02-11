@@ -22,6 +22,7 @@ DOMAIN = "noscha.io"
 # Secrets (set via `wrangler secret put`):
 # COINOS_API_TOKEN
 # WEBHOOK_SECRET
+# STAGING_AUTH_TOKEN — Bearer auth for staging gate (env staging only)
 # CF_API_TOKEN
 # CF_ZONE_ID
 

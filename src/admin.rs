@@ -58,6 +58,27 @@ pub struct ExtendRequest {
     pub minutes: u64,
 }
 
+/// Debug webhook config stored in R2 at config/debug_webhook.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugWebhookConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub webhook_url: String,
+    #[serde(default)]
+    pub level: String,
+}
+
+impl Default for DebugWebhookConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            webhook_url: String::new(),
+            level: "off".to_string(),
+        }
+    }
+}
+
 /// Verify auth: Bearer token (ADMIN_API_TOKEN) OR session token (X-Admin-Token from NIP-07 login)
 #[cfg(target_arch = "wasm32")]
 async fn verify_session_token(req: &Request, bucket: &worker::Bucket, env: &Env) -> Result<()> {
@@ -244,6 +265,65 @@ pub async fn load_pricing(bucket: &worker::Bucket) -> crate::types::PricingConfi
         }
         _ => crate::types::default_pricing(),
     }
+}
+
+/// Load debug webhook config from R2, falling back to defaults
+#[cfg(target_arch = "wasm32")]
+pub async fn load_debug_webhook_config(bucket: &worker::Bucket) -> DebugWebhookConfig {
+    match bucket.get("config/debug_webhook.json").execute().await {
+        Ok(Some(obj)) => {
+            if let Some(body) = obj.body() {
+                if let Ok(text) = body.text().await {
+                    if let Ok(config) = serde_json::from_str::<DebugWebhookConfig>(&text) {
+                        return config;
+                    }
+                }
+            }
+            DebugWebhookConfig::default()
+        }
+        _ => DebugWebhookConfig::default(),
+    }
+}
+
+/// GET /api/admin/debug-webhook — get current debug webhook config
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_debug_webhook_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if verify_session_token(&req, &bucket, &ctx.env).await.is_err() {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let config = load_debug_webhook_config(&bucket).await;
+    Response::from_json(&config)
+}
+
+/// PUT /api/admin/debug-webhook — update debug webhook config
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_debug_webhook_put(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if verify_session_token(&req, &bucket, &ctx.env).await.is_err() {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let body: DebugWebhookConfig = req.json().await
+        .map_err(|_| Error::RustError("Invalid debug webhook config JSON".to_string()))?;
+
+    let level = body.level.to_lowercase();
+    let valid_levels = ["off", "error", "warn", "info", "debug"];
+    if !valid_levels.contains(&level.as_str()) {
+        return Response::error("Invalid level: must be off, error, warn, info, or debug", 400);
+    }
+
+    let config = DebugWebhookConfig {
+        enabled: body.enabled,
+        webhook_url: body.webhook_url.trim().to_string(),
+        level,
+    };
+
+    let json = serde_json::to_string(&config).map_err(|e| Error::RustError(e.to_string()))?;
+    bucket.put("config/debug_webhook.json", json).execute().await?;
+
+    Response::from_json(&config)
 }
 
 /// GET /admin — serve admin dashboard HTML
