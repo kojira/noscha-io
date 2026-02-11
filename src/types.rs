@@ -507,3 +507,18 @@ mod tests {
         assert_eq!(parsed.token, "sess_abc");
     }
 }
+
+/// PUT /api/settings/{management_token} request body
+#[derive(Debug, Deserialize)]
+pub struct SettingsRequest {
+    #[serde(default)]
+    pub webhook_url: Option<String>,
+}
+
+/// PUT /api/settings/{management_token} response
+#[derive(Debug, Serialize)]
+pub struct SettingsResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
+}

@@ -160,7 +160,7 @@ Update rental settings, currently supports setting webhook URL for email notific
 
 | Plan | Subdomain | Email | NIP-05 | Bundle (all 3) |
 |------|-----------|-------|--------|-----------------|
-| 1 day | 500 | 1,500 | 200 | 1,800 |
+| 1 day | 300 | 1,500 | 100 | 1,600 |
 | 7 days | 1,000 | 2,500 | 500 | 3,300 |
 | 30 days | 2,000 | 5,000 | 1,000 | 6,500 |
 | 90 days | 5,000 | 12,000 | 2,500 | 16,000 |

@@ -213,9 +213,10 @@ async fn handle_create_order(
     mut req: Request,
     ctx: RouteContext<()>,
 ) -> Result<Response> {
-    let body: OrderRequest = req.json().await.map_err(|_| {
-        Error::RustError("Invalid request body".to_string())
-    })?;
+    let body: OrderRequest = match req.json().await {
+        Ok(b) => b,
+        Err(_) => return Response::error("Invalid request body", 400),
+    };
 
     // Validate username
     if let Err(err) = validate_username(&body.username) {
@@ -769,9 +770,10 @@ async fn handle_renew(
     mut req: Request,
     ctx: RouteContext<()>,
 ) -> Result<Response> {
-    let body: RenewRequest = req.json().await.map_err(|_| {
-        Error::RustError("Invalid request body".to_string())
-    })?;
+    let body: RenewRequest = match req.json().await {
+        Ok(b) => b,
+        Err(_) => return Response::error("Invalid request body", 400),
+    };
 
     let bucket = ctx.env.bucket("BUCKET")?;
 
@@ -906,6 +908,54 @@ async fn handle_renew(
         bolt11: resp_bolt11,
         expires_at: resp_expires_at,
     })
+}
+
+/// PUT /api/settings/{management_token} — update rental settings
+#[cfg(target_arch = "wasm32")]
+async fn handle_settings_update(
+    mut req: Request,
+    ctx: RouteContext<()>,
+) -> Result<Response> {
+    let token = ctx.param("token").unwrap();
+    let body: SettingsRequest = match req.json().await {
+        Ok(b) => b,
+        Err(_) => return Response::error("Invalid request body", 400),
+    };
+
+    // Validate webhook_url if provided
+    if let Some(ref url) = body.webhook_url {
+        if !url.is_empty() && !url.starts_with("https://") && !url.starts_with("http://") {
+            return Response::error("webhook_url must be a valid HTTP(S) URL", 400);
+        }
+    }
+
+    let bucket = ctx.env.bucket("BUCKET")?;
+
+    // Scan rentals to find matching management_token
+    let list = bucket.list().prefix("rentals/").execute().await?;
+    for obj_entry in list.objects() {
+        let key = obj_entry.key();
+        if let Some(obj) = bucket.get(&key).execute().await? {
+            let obj_body = obj.body().unwrap();
+            let text = obj_body.text().await?;
+            if let Ok(mut rental) = serde_json::from_str::<Rental>(&text) {
+                if rental.management_token.as_deref() == Some(token) {
+                    // Update webhook_url
+                    rental.webhook_url = body.webhook_url.clone();
+                    let updated_json = serde_json::to_string(&rental)
+                        .map_err(|e| Error::RustError(e.to_string()))?;
+                    bucket.put(&key, updated_json).execute().await?;
+
+                    return Response::from_json(&SettingsResponse {
+                        success: true,
+                        webhook_url: rental.webhook_url,
+                    });
+                }
+            }
+        }
+    }
+
+    Response::error("Rental not found", 404)
 }
 
 /// GET /my/{management_token} — user my-page
@@ -1271,6 +1321,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/api/order/:order_id/status", handle_order_status)
         .post_async("/api/webhook/coinos", handle_coinos_webhook)
         .post_async("/api/renew", handle_renew)
+        .put_async("/api/settings/:token", handle_settings_update)
         .get_async("/my/:token", handle_my_page)
         .get_async("/api/pricing", handle_public_pricing)
         .get_async("/.well-known/nostr.json", handle_nip05)
