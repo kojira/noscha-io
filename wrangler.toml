@@ -28,3 +28,20 @@ DOMAIN = "noscha.io"
 # Email routing - catch-all forwards to this worker
 # Note: Email handler is in JS shim (src/email_shim.js) since worker-rs doesn't support email events
 # Configure in Cloudflare Dashboard: Email Routing > Catch-all > Send to Worker
+
+[env.staging]
+name = "noscha-io-staging"
+routes = [
+  { pattern = "staging.noscha.io", custom_domain = true }
+]
+
+[env.staging.build]
+command = "cargo install -q worker-build && worker-build --release"
+
+[env.staging.vars]
+DOMAIN = "staging.noscha.io"
+MOCK_PAYMENT = "true"
+
+[[env.staging.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "noscha-data-staging"

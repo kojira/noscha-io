@@ -46,10 +46,13 @@ struct ServiceInfo {
     pricing: &'static str,
 }
 
+pub const VERSION: &str = "2026.02.11";
+
 #[cfg(target_arch = "wasm32")]
 #[derive(Serialize)]
 struct HealthResponse {
     status: &'static str,
+    version: &'static str,
 }
 
 /// Extract ServiceType list from OrderServicesRequest
@@ -1155,7 +1158,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             Response::from_json(&info)
         })
         .get("/health", |_, _| {
-            let health = HealthResponse { status: "ok" };
+            let health = HealthResponse { status: "ok", version: VERSION };
             Response::from_json(&health)
         })
         .get_async("/api/check/:username", handle_check_username)
