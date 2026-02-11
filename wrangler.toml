@@ -41,6 +41,7 @@ command = "cargo install -q worker-build && worker-build --release"
 [env.staging.vars]
 DOMAIN = "staging.noscha.io"
 MOCK_PAYMENT = "true"
+REQUIRE_AUTH = "true"
 
 [[env.staging.r2_buckets]]
 binding = "BUCKET"
