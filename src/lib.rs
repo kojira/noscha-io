@@ -1,5 +1,5 @@
-mod types;
-mod validation;
+pub mod types;
+pub mod validation;
 
 #[cfg(target_arch = "wasm32")]
 mod coinos;
