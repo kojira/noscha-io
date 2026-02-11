@@ -1,0 +1,196 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "noscha.io API",
+    "description": "Disposable email, subdomain & NIP-05 identity service powered by Lightning Network payments.",
+    "version": "1.0.0",
+    "contact": {"email": "admin@noscha.io"}
+  },
+  "servers": [{"url": "https://noscha.io"}],
+  "paths": {
+    "/api/check/{username}": {
+      "get": {
+        "operationId": "checkUsername",
+        "summary": "Check username availability",
+        "parameters": [
+          {"name": "username", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Availability result",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CheckUsernameResponse"}}}
+          }
+        }
+      }
+    },
+    "/api/order": {
+      "post": {
+        "operationId": "createOrder",
+        "summary": "Create a new rental order with Lightning invoice",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OrderRequest"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "Order created with Lightning invoice",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OrderResponse"}}}
+          },
+          "400": {"description": "Invalid request"},
+          "409": {"description": "Username already taken"}
+        }
+      }
+    },
+    "/api/order/{order_id}/status": {
+      "get": {
+        "operationId": "getOrderStatus",
+        "summary": "Poll order payment/provisioning status",
+        "parameters": [
+          {"name": "order_id", "in": "path", "required": true, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Order status",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OrderStatusResponse"}}}
+          },
+          "404": {"description": "Order not found"}
+        }
+      }
+    },
+    "/api/renew": {
+      "post": {
+        "operationId": "renewRental",
+        "summary": "Extend an existing rental",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RenewRequest"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "Renewal invoice created",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RenewResponse"}}}
+          },
+          "404": {"description": "Rental not found"}
+        }
+      }
+    },
+    "/api/pricing": {
+      "get": {
+        "operationId": "getPricing",
+        "summary": "Get current pricing for all plans and services",
+        "responses": {
+          "200": {
+            "description": "Pricing matrix",
+            "content": {"application/json": {"schema": {"type": "object", "additionalProperties": {"type": "object", "additionalProperties": {"type": "integer"}}}}}
+          }
+        }
+      }
+    },
+    "/api/info": {
+      "get": {
+        "operationId": "getServiceInfo",
+        "summary": "Get service metadata",
+        "responses": {
+          "200": {"description": "Service info"}
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "version": {"type": "string"}}}}}
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CheckUsernameResponse": {
+        "type": "object",
+        "properties": {
+          "available": {"type": "boolean"},
+          "username": {"type": "string"},
+          "error": {"type": "string"}
+        },
+        "required": ["available", "username"]
+      },
+      "OrderRequest": {
+        "type": "object",
+        "required": ["username", "plan"],
+        "properties": {
+          "username": {"type": "string", "minLength": 1, "maxLength": 20},
+          "plan": {"type": "string", "enum": ["1d", "7d", "30d", "90d", "365d"]},
+          "services": {"$ref": "#/components/schemas/ServicesRequest"}
+        }
+      },
+      "ServicesRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "object",
+            "properties": {"forward_to": {"type": "string", "format": "email"}},
+            "required": ["forward_to"]
+          },
+          "subdomain": {
+            "type": "object",
+            "properties": {
+              "type": {"type": "string", "enum": ["A", "AAAA", "CNAME"]},
+              "target": {"type": "string"},
+              "proxied": {"type": "boolean", "default": false}
+            },
+            "required": ["type", "target"]
+          },
+          "nip05": {
+            "type": "object",
+            "properties": {"pubkey": {"type": "string", "description": "Hex-encoded Nostr public key"}},
+            "required": ["pubkey"]
+          }
+        }
+      },
+      "OrderResponse": {
+        "type": "object",
+        "properties": {
+          "order_id": {"type": "string"},
+          "amount_sats": {"type": "integer"},
+          "bolt11": {"type": "string", "description": "Lightning Network invoice"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "management_token": {"type": "string"}
+        },
+        "required": ["order_id", "amount_sats", "bolt11", "expires_at"]
+      },
+      "OrderStatusResponse": {
+        "type": "object",
+        "properties": {
+          "order_id": {"type": "string"},
+          "status": {"type": "string", "enum": ["pending", "paid", "provisioned", "expired"]},
+          "management_token": {"type": "string"}
+        },
+        "required": ["order_id", "status"]
+      },
+      "RenewRequest": {
+        "type": "object",
+        "required": ["management_token", "plan"],
+        "properties": {
+          "management_token": {"type": "string"},
+          "plan": {"type": "string", "enum": ["1d", "7d", "30d", "90d", "365d"]},
+          "services": {"$ref": "#/components/schemas/ServicesRequest"}
+        }
+      },
+      "RenewResponse": {
+        "type": "object",
+        "properties": {
+          "order_id": {"type": "string"},
+          "amount_sats": {"type": "integer"},
+          "bolt11": {"type": "string"},
+          "expires_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["order_id", "amount_sats", "bolt11", "expires_at"]
+      }
+    }
+  }
+}

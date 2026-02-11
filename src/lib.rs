@@ -1141,6 +1141,30 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get("/", |_, _| {
             Response::from_html(ui::landing_page_html())
         })
+        .get("/skill.md", |_, _| {
+            let mut headers = Headers::new();
+            let _ = headers.set("Content-Type", "text/markdown; charset=utf-8");
+            let _ = headers.set("Access-Control-Allow-Origin", "*");
+            Ok(Response::ok(include_str!("skill.md"))?.with_headers(headers))
+        })
+        .get("/llms.txt", |_, _| {
+            let mut headers = Headers::new();
+            let _ = headers.set("Content-Type", "text/plain; charset=utf-8");
+            let _ = headers.set("Access-Control-Allow-Origin", "*");
+            Ok(Response::ok(include_str!("llms.txt"))?.with_headers(headers))
+        })
+        .get("/.well-known/ai-plugin.json", |_, _| {
+            let mut headers = Headers::new();
+            let _ = headers.set("Content-Type", "application/json");
+            let _ = headers.set("Access-Control-Allow-Origin", "*");
+            Ok(Response::ok(include_str!("ai-plugin.json"))?.with_headers(headers))
+        })
+        .get("/api/docs", |_, _| {
+            let mut headers = Headers::new();
+            let _ = headers.set("Content-Type", "application/json");
+            let _ = headers.set("Access-Control-Allow-Origin", "*");
+            Ok(Response::ok(include_str!("openapi.json"))?.with_headers(headers))
+        })
         .get("/api/info", |_, _| {
             let info = ServiceInfo {
                 name: "noscha.io",

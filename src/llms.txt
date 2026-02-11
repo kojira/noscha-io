@@ -1,0 +1,17 @@
+# noscha.io
+
+> Disposable email, subdomain & NIP-05 identity — paid via Lightning Network
+
+## API
+
+- Base: https://noscha.io
+- Check username: GET /api/check/{username}
+- Create order: POST /api/order {"username","plan","services":{...}}
+- Order status: GET /api/order/{order_id}/status
+- Renew: POST /api/renew {"management_token","plan"}
+- Pricing: GET /api/pricing
+- Plans: 1d, 7d, 30d, 90d, 365d
+- Services: email, subdomain, nip05 (or bundle all 3)
+- Payment: Lightning Network (bolt11)
+- Full docs: https://noscha.io/skill.md
+- OpenAPI spec: https://noscha.io/api/docs

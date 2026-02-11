@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "noscha.io",
+  "name_for_model": "noscha",
+  "description_for_human": "Rent disposable email forwarding, subdomains, and NIP-05 Nostr identities — paid instantly via Lightning Network.",
+  "description_for_model": "noscha.io provides disposable email forwarding (username@noscha.io), subdomain DNS (username.noscha.io), and NIP-05 Nostr identity verification. All services are paid via Lightning Network invoices (bolt11). No signup required. Plans range from 1 day to 1 year. Use GET /api/check/{username} to check availability, POST /api/order to create an order with a Lightning invoice, GET /api/order/{order_id}/status to poll payment status, and POST /api/renew to extend rentals.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://noscha.io/api/docs"
+  },
+  "logo_url": "https://noscha.io/logo.png",
+  "contact_email": "admin@noscha.io",
+  "legal_info_url": "https://noscha.io/skill.md"
+}

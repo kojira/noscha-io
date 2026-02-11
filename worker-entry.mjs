@@ -168,8 +168,9 @@ class UnifiedWorker extends WorkerClass {
       // But protect HTML pages and root
       const isApi = url.pathname.startsWith('/api/');
       const isWellKnown = url.pathname.startsWith('/.well-known/');
+      const isAgentDoc = url.pathname === '/skill.md' || url.pathname === '/llms.txt';
 
-      if (!isApi && !isWellKnown) {
+      if (!isApi && !isWellKnown && !isAgentDoc) {
         const authed = await isAuthenticated(request, this.env);
         if (!authed) {
           return new Response(AUTH_LOGIN_HTML, {
