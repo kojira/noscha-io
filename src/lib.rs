@@ -180,6 +180,7 @@ async fn handle_create_order(
         coinos_invoice_hash: invoice.hash,
         webhook_secret: Some(webhook_secret),
         services_requested: body.services,
+        management_token: None,
     };
 
     // Save order to R2
@@ -272,6 +273,7 @@ async fn handle_create_order(
         // Update order to Provisioned
         let mut order = order;
         order.status = OrderStatus::Provisioned;
+        order.management_token = mgmt_token.clone();
         let updated_json = serde_json::to_string(&order)
             .map_err(|e| Error::RustError(e.to_string()))?;
         bucket.put(&order_key, updated_json).execute().await?;
@@ -314,6 +316,11 @@ async fn handle_order_status(
 
             Response::from_json(&OrderStatusResponse {
                 order_id: order.order_id,
+                management_token: if status == OrderStatus::Provisioned {
+                    order.management_token
+                } else {
+                    None
+                },
                 status,
             })
         }
@@ -513,6 +520,7 @@ async fn handle_coinos_webhook(
 
                     // Update order status
                     order.status = OrderStatus::Provisioned;
+                    order.management_token = rental.management_token.clone();
                     let updated_json = serde_json::to_string(&order)
                         .map_err(|e| Error::RustError(e.to_string()))?;
                     bucket.put(&key, updated_json).execute().await?;

@@ -94,6 +94,12 @@ input:focus{border-color:var(--purple)}
 .success-check{font-size:3rem;margin-bottom:.5rem}
 .success-title{font-size:1.2rem;font-weight:700;color:var(--green);margin-bottom:.5rem}
 .success-detail{font-size:.85rem;color:var(--muted)}
+.mgmt-section{margin-top:1.5rem;text-align:left}
+.mgmt-link{display:block;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;margin:.5rem 0;word-break:break-all;text-align:center}
+.mgmt-link a{color:var(--purple);font-weight:600;font-size:.95rem}
+.mgmt-warning{background:#f9731622;border:1px solid var(--orange-dim);border-radius:6px;padding:.6rem .75rem;font-size:.8rem;color:var(--orange);margin-top:.75rem;text-align:center}
+.copy-btn{display:inline-block;padding:.4rem .75rem;background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.8rem;cursor:pointer;margin-top:.5rem;transition:all .2s}
+.copy-btn:hover{border-color:var(--purple);color:var(--purple)}
 
 /* Responsive */
 @media(max-width:600px){
@@ -212,8 +218,13 @@ input:focus{border-color:var(--purple)}
     <div id="success-box" class="section" style="display:none">
       <div class="success-box">
         <div class="success-check">&#10003;</div>
-        <div class="success-title">Activated!</div>
+        <div class="success-title">Payment complete!</div>
         <div class="success-detail" id="success-detail"></div>
+        <div class="mgmt-section" id="mgmt-section" style="display:none">
+          <div class="mgmt-link" id="mgmt-link"></div>
+          <div style="text-align:center"><button class="copy-btn" id="copy-token-btn">Copy management token</button></div>
+          <div class="mgmt-warning">This URL is your only way to manage your services. Save it now — it cannot be reissued.</div>
+        </div>
         <button class="btn btn-secondary" style="margin-top:1.5rem" onclick="location.reload()">New order</button>
       </div>
     </div>
@@ -241,6 +252,7 @@ input:focus{border-color:var(--purple)}
   var checkTimer = null;
   var pollTimer = null;
   var currentOrderId = null;
+  var currentManagementToken = null;
 
   // Service toggle wiring
   ['email','subdomain','nip05'].forEach(function(s){
@@ -343,6 +355,7 @@ input:focus{border-color:var(--purple)}
 
   function showPayment(order, username){
     currentOrderId = order.order_id;
+    currentManagementToken = order.management_token || null;
     infoSection.style.display = 'none';
     payScreen.style.display = 'block';
     successBox.style.display = 'none';
@@ -381,6 +394,7 @@ input:focus{border-color:var(--purple)}
         .then(function(d){
           if(d.status === 'paid' || d.status === 'provisioned'){
             clearInterval(pollTimer);
+            if(d.management_token) currentManagementToken = d.management_token;
             payBadge.textContent = d.status === 'provisioned' ? 'provisioned' : 'paid';
             payBadge.className = 'status-badge '+(d.status === 'provisioned' ? 'status-provisioned' : 'status-paid');
             pollInfo.textContent = '';
@@ -396,6 +410,23 @@ input:focus{border-color:var(--purple)}
     if(document.getElementById('svc-subdomain').checked) lines.push(username+'.noscha.io');
     if(document.getElementById('svc-nip05').checked) lines.push('NIP-05: '+username+'@noscha.io');
     successDetail.innerHTML = lines.join('<br>') + '<br><br>Your services are now active.';
+
+    var mgmtSection = document.getElementById('mgmt-section');
+    if(currentManagementToken){
+      mgmtSection.style.display = 'block';
+      var myPagePath = '/my/' + currentManagementToken;
+      var mgmtLinkEl = document.getElementById('mgmt-link');
+      mgmtLinkEl.innerHTML = '<a href="' + myPagePath + '">My Page: ' + myPagePath + '</a>';
+      document.getElementById('copy-token-btn').onclick = function(){
+        navigator.clipboard.writeText(location.origin + myPagePath).then(function(){
+          var btn = document.getElementById('copy-token-btn');
+          btn.textContent = 'Copied!';
+          setTimeout(function(){btn.textContent = 'Copy management token';}, 1500);
+        });
+      };
+    } else {
+      mgmtSection.style.display = 'none';
+    }
   }
 
   // Back / cancel

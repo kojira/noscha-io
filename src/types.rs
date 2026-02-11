@@ -67,6 +67,9 @@ pub struct Order {
     /// Services requested in this order (for provisioning after payment)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub services_requested: Option<OrderServicesRequest>,
+    /// Management token for user self-service
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub management_token: Option<String>,
 }
 
 /// Services requested in an order
@@ -133,6 +136,8 @@ pub struct CheckUsernameResponse {
 pub struct OrderStatusResponse {
     pub order_id: String,
     pub status: OrderStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub management_token: Option<String>,
 }
 
 /// Subdomain service configuration stored in rental
