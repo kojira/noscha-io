@@ -93,6 +93,70 @@ fn generate_order_id() -> String {
     format!("ord_{:x}", now)
 }
 
+/// Send Discord webhook notification for a paid order (best effort)
+#[cfg(target_arch = "wasm32")]
+async fn send_discord_notification(env: &Env, order: &Order) {
+    let webhook_url = match env.secret("DISCORD_WEBHOOK_URL") {
+        Ok(s) => s.to_string(),
+        Err(_) => return,
+    };
+
+    let plan_label = match order.plan {
+        Plan::OneDay => "1 day",
+        Plan::SevenDays => "7 days",
+        Plan::ThirtyDays => "30 days",
+        Plan::NinetyDays => "90 days",
+        Plan::OneYear => "365 days",
+    };
+
+    let mut services = Vec::new();
+    if let Some(ref req) = order.services_requested {
+        if req.email.is_some() { services.push("📧 Email"); }
+        if req.subdomain.is_some() { services.push("🌐 Subdomain"); }
+        if req.nip05.is_some() { services.push("🔑 NIP-05"); }
+    }
+    let services_str = if services.is_empty() {
+        "None".to_string()
+    } else {
+        services.join(", ")
+    };
+
+    let is_renewal = order.renewal_for.is_some();
+    let title = if is_renewal {
+        format!("🔄 Renewal Payment Received — {}", order.username)
+    } else {
+        format!("⚡ New Payment Received — {}", order.username)
+    };
+
+    let body = serde_json::json!({
+        "embeds": [{
+            "title": title,
+            "color": 0x7C3AED,
+            "fields": [
+                { "name": "👤 Username", "value": order.username, "inline": true },
+                { "name": "📅 Plan", "value": plan_label, "inline": true },
+                { "name": "🛠 Services", "value": services_str, "inline": true },
+                { "name": "💰 Amount", "value": format!("{} sats", order.amount_sats), "inline": true },
+                { "name": "🆔 Order ID", "value": &order.order_id, "inline": true },
+            ],
+            "timestamp": order.created_at,
+        }]
+    });
+
+    let mut headers = Headers::new();
+    let _ = headers.set("Content-Type", "application/json");
+    let req = Request::new_with_init(
+        &webhook_url,
+        RequestInit::new()
+            .with_method(Method::Post)
+            .with_headers(headers)
+            .with_body(Some(wasm_bindgen::JsValue::from_str(&body.to_string()))),
+    );
+    if let Ok(r) = req {
+        let _ = Fetch::Request(r).send().await;
+    }
+}
+
 /// Generate a webhook secret for order verification
 #[cfg(target_arch = "wasm32")]
 fn generate_webhook_secret() -> String {
@@ -517,6 +581,7 @@ async fn handle_coinos_webhook(
                                     .map_err(|e| Error::RustError(e.to_string()))?;
                                 bucket.put(&key, updated_json).execute().await?;
 
+                                send_discord_notification(&ctx.env, &order).await;
                                 return Response::ok("ok");
                             }
                         }
@@ -607,6 +672,7 @@ async fn handle_coinos_webhook(
                         .map_err(|e| Error::RustError(e.to_string()))?;
                     bucket.put(&key, updated_json).execute().await?;
 
+                    send_discord_notification(&ctx.env, &order).await;
                     return Response::ok("ok");
                 }
             }
