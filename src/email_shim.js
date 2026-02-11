@@ -18,6 +18,10 @@ function extractBody(rawEmail) {
   const ctMatch = headerPart.match(/^Content-Type:\s*(.+?)(?:\r?\n(?=\s)|\r?\n|$)/mi);
   const contentType = ctMatch ? ctMatch[1] : '';
 
+  // Get charset from Content-Type
+  const charsetMatch = contentType.match(/charset="?([^";\s]+)"?/i);
+  const charset = charsetMatch ? charsetMatch[1].toLowerCase() : 'utf-8';
+
   // Get Content-Transfer-Encoding
   const cteMatch = headerPart.match(/^Content-Transfer-Encoding:\s*(\S+)/mi);
   const encoding = cteMatch ? cteMatch[1].toLowerCase() : '7bit';
@@ -26,7 +30,7 @@ function extractBody(rawEmail) {
     return extractMultipartBody(contentType, bodyPart);
   }
 
-  return decodeBody(bodyPart, encoding);
+  return decodeBody(bodyPart, encoding, charset);
 }
 
 function extractMultipartBody(contentType, body) {
@@ -58,6 +62,10 @@ function extractMultipartBody(contentType, body) {
 
     const pCtMatch = pHeaders.match(/Content-Type:\s*([^;\r\n]+)/i);
     const pCt = pCtMatch ? pCtMatch[1].trim().toLowerCase() : '';
+    const pCtFull = pHeaders.match(/Content-Type:\s*(.+?)(?:\r?\n(?=\s)|\r?\n|$)/mi);
+    const pCtFullStr = pCtFull ? pCtFull[1] : '';
+    const pCharsetMatch = pCtFullStr.match(/charset="?([^";\s]+)"?/i);
+    const pCharset = pCharsetMatch ? pCharsetMatch[1].toLowerCase() : 'utf-8';
     const pCteMatch = pHeaders.match(/Content-Transfer-Encoding:\s*(\S+)/i);
     const pEnc = pCteMatch ? pCteMatch[1].toLowerCase() : '7bit';
 
@@ -70,9 +78,9 @@ function extractMultipartBody(contentType, body) {
     }
 
     if (pCt === 'text/html') {
-      htmlPart = decodeBody(pBody, pEnc);
+      htmlPart = decodeBody(pBody, pEnc, pCharset);
     } else if (pCt === 'text/plain') {
-      textPart = decodeBody(pBody, pEnc);
+      textPart = decodeBody(pBody, pEnc, pCharset);
     }
   }
 
@@ -80,19 +88,36 @@ function extractMultipartBody(contentType, body) {
   return textPart || htmlPart || body;
 }
 
-function decodeBody(body, encoding) {
+function decodeBase64UTF8(base64str, charset = 'utf-8') {
+  const binaryStr = atob(base64str);
+  const bytes = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  return new TextDecoder(charset).decode(bytes);
+}
+
+function decodeBody(body, encoding, charset = 'utf-8') {
   // Remove trailing boundary artifacts
   body = body.replace(/--[\w=+/]+--\s*$/, '').trim();
 
   if (encoding === 'base64') {
     try {
-      return atob(body.replace(/\s/g, ''));
+      return decodeBase64UTF8(body.replace(/\s/g, ''), charset);
     } catch { return body; }
   }
   if (encoding === 'quoted-printable') {
-    return body
+    const raw = body
       .replace(/=\r?\n/g, '') // soft line breaks
       .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    // Decode as UTF-8 (or specified charset) from binary string
+    try {
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) {
+        bytes[i] = raw.charCodeAt(i);
+      }
+      return new TextDecoder(charset).decode(bytes);
+    } catch { return raw; }
   }
   return body;
 }
