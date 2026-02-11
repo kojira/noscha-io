@@ -165,6 +165,10 @@ export default {
     const subjectMatch = rawEmail.match(/^Subject:\s*(.+)$/mi);
     const subject = subjectMatch ? subjectMatch[1].trim() : "(no subject)";
 
+    // Extract Date header from raw email
+    const dateMatch = rawEmail.match(/^Date:\s*(.+)$/mi);
+    const emailDate = dateMatch ? dateMatch[1].trim() : null;
+
     // Parse email: separate headers from body at first blank line
     const bodyText = extractBody(rawEmail);
 
@@ -181,7 +185,7 @@ export default {
     const escapedBody = bodyText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const htmlBody = `<div style="font-family:sans-serif;color:#333">
 <p style="color:#888;font-size:12px;border-bottom:1px solid #eee;padding-bottom:8px;margin-bottom:12px">
-Forwarded from <strong>${message.from}</strong> to <strong>${recipient}</strong> via noscha.io
+Forwarded from <strong>${message.from}</strong> to <strong>${recipient}</strong> via noscha.io${emailDate ? ` | Date: ${emailDate}` : ''}
 </p>
 <pre style="white-space:pre-wrap;font-family:inherit">${escapedBody}</pre>
 </div>`;
