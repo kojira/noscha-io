@@ -10,9 +10,6 @@ routes = [
 [build]
 command = "cargo install -q worker-build && worker-build --release"
 
-# Email routing trigger - makes this worker appear in Email Routing worker list
-[[email_triggers]]
-
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "noscha-data"
