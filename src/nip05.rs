@@ -59,6 +59,16 @@ pub async fn handle_nip05(
             let rental: Rental = serde_json::from_str(&text)
                 .map_err(|e| Error::RustError(e.to_string()))?;
 
+            let now_ms = js_sys::Date::now();
+            let expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
+            if expires_date.get_time() <= now_ms {
+                return Response::error("Username not found", 404)
+                    .map(|mut res| {
+                        let _ = res.headers_mut().set("Access-Control-Allow-Origin", "*");
+                        res
+                    });
+            }
+
             // Check if NIP-05 service is enabled
             if let Some(nip05_svc) = rental.services.nip05.as_ref() {
                 if !nip05_svc.enabled {
@@ -118,6 +128,7 @@ pub async fn handle_nip05_options(_req: Request, _ctx: RouteContext<()>) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{Plan, Rental, RentalServices};
 
     #[test]
     fn test_validate_pubkey_hex_valid() {

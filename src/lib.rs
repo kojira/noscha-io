@@ -201,7 +201,21 @@ async fn handle_check_username(
     let key = format!("rentals/{}.json", username);
     let existing = bucket.get(&key).execute().await?;
 
-    let available = existing.is_none();
+    let available = match existing {
+        None => true,
+        Some(obj) => {
+            let body = obj.body().unwrap();
+            let text = body.text().await?;
+            match serde_json::from_str::<Rental>(&text) {
+                Ok(rental) => {
+                    let now_ms = js_sys::Date::now();
+                    let expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
+                    expires_date.get_time() <= now_ms
+                }
+                Err(_) => false,
+            }
+        }
+    };
 
     Response::from_json(&CheckUsernameResponse {
         available,

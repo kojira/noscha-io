@@ -397,6 +397,21 @@ pub fn default_pricing() -> PricingConfig {
     config
 }
 
+/// Check if a rental has expired using JS Date (wasm32 only).
+/// Compares expires_at ISO string against current time via js_sys::Date.
+#[cfg(target_arch = "wasm32")]
+pub fn is_expired_iso(expires_at: &str) -> bool {
+    let now_ms = js_sys::Date::now();
+    let expires_date = js_sys::Date::new(&expires_at.into());
+    expires_date.get_time() <= now_ms
+}
+
+/// Check if expires_at is before now_iso using lexicographic string comparison.
+/// Works on any platform since ISO 8601 dates sort lexicographically.
+pub fn is_expired_at(expires_at: &str, now_iso: &str) -> bool {
+    expires_at <= now_iso
+}
+
 /// Admin session stored in R2 at sessions/{token}.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminSession {
@@ -681,6 +696,38 @@ mod tests {
         assert_eq!(json, "\"5m\"");
         let plan: Plan = serde_json::from_str("\"5m\"").unwrap();
         assert_eq!(plan, Plan::FiveMinutes);
+    }
+
+    // === Expiry check tests ===
+
+    #[test]
+    fn test_is_expired_at_expired() {
+        // expires_at is in the past relative to now_iso
+        assert!(is_expired_at("2025-01-01T00:00:00Z", "2025-06-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn test_is_expired_at_not_expired() {
+        // expires_at is in the future relative to now_iso
+        assert!(!is_expired_at("2026-12-31T23:59:59Z", "2025-06-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn test_is_expired_at_exact_boundary() {
+        // expires_at equals now_iso — should be considered expired (<=)
+        assert!(is_expired_at("2025-06-01T00:00:00Z", "2025-06-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn test_is_expired_at_one_second_before() {
+        // expires_at is one second before now_iso
+        assert!(is_expired_at("2025-06-01T11:59:59Z", "2025-06-01T12:00:00Z"));
+    }
+
+    #[test]
+    fn test_is_expired_at_one_second_after() {
+        // expires_at is one second after now_iso
+        assert!(!is_expired_at("2025-06-01T12:00:01Z", "2025-06-01T12:00:00Z"));
     }
 
     /// Rental with webhook_url field
