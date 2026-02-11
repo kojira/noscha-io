@@ -391,6 +391,21 @@ pub struct NostrEvent {
     pub sig: Option<String>,
 }
 
+/// PUT /api/settings/{management_token} request body
+#[derive(Debug, Deserialize)]
+pub struct SettingsRequest {
+    #[serde(default)]
+    pub webhook_url: Option<String>,
+}
+
+/// PUT /api/settings/{management_token} response
+#[derive(Debug, Serialize)]
+pub struct SettingsResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -506,19 +521,115 @@ mod tests {
         let parsed: AdminSession = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.token, "sess_abc");
     }
-}
 
-/// PUT /api/settings/{management_token} request body
-#[derive(Debug, Deserialize)]
-pub struct SettingsRequest {
-    #[serde(default)]
-    pub webhook_url: Option<String>,
-}
+    // === Bug fix tests ===
 
-/// PUT /api/settings/{management_token} response
-#[derive(Debug, Serialize)]
-pub struct SettingsResponse {
-    pub success: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub webhook_url: Option<String>,
+    /// Bug 1: OrderRequest requires webhook_url - valid request with webhook_url
+    #[test]
+    fn test_order_request_with_webhook_url() {
+        let json = r#"{"username":"alice","plan":"30d","webhook_url":"https://example.com/hook","services":{"nip05":{"pubkey":"deadbeef"}}}"#;
+        let req: OrderRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.username, "alice");
+        assert_eq!(req.webhook_url, "https://example.com/hook");
+        assert!(req.services.is_some());
+    }
+
+    /// Bug 1: OrderRequest without webhook_url should fail deserialization
+    #[test]
+    fn test_order_request_without_webhook_url_fails() {
+        let json = r#"{"username":"alice","plan":"30d"}"#;
+        let result = serde_json::from_str::<OrderRequest>(json);
+        assert!(result.is_err(), "OrderRequest without webhook_url should fail");
+    }
+
+    /// Bug 1: OrderRequest with empty webhook_url deserializes (validation is at handler level)
+    #[test]
+    fn test_order_request_empty_webhook_url() {
+        let json = r#"{"username":"alice","plan":"30d","webhook_url":""}"#;
+        let req: OrderRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.webhook_url, "");
+    }
+
+    /// Bug 2: SettingsRequest with webhook_url
+    #[test]
+    fn test_settings_request_with_webhook_url() {
+        let json = r#"{"webhook_url":"https://example.com/hook"}"#;
+        let req: SettingsRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.webhook_url, Some("https://example.com/hook".to_string()));
+    }
+
+    /// Bug 2: SettingsRequest with null webhook_url (disable)
+    #[test]
+    fn test_settings_request_null_webhook_url() {
+        let json = r#"{"webhook_url":null}"#;
+        let req: SettingsRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.webhook_url, None);
+    }
+
+    /// Bug 2: SettingsRequest with empty body (webhook_url defaults to None)
+    #[test]
+    fn test_settings_request_empty_body() {
+        let json = r#"{}"#;
+        let req: SettingsRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.webhook_url, None);
+    }
+
+    /// Bug 2: SettingsResponse serialization
+    #[test]
+    fn test_settings_response_serde() {
+        let resp = SettingsResponse {
+            success: true,
+            webhook_url: Some("https://example.com".to_string()),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains(r#""success":true"#));
+        assert!(json.contains(r#""webhook_url":"https://example.com""#));
+
+        // None webhook_url should be omitted
+        let resp2 = SettingsResponse { success: true, webhook_url: None };
+        let json2 = serde_json::to_string(&resp2).unwrap();
+        assert!(!json2.contains("webhook_url"));
+    }
+
+    /// Bug 3: skill.md pricing matches default_pricing for non-1d plans
+    #[test]
+    fn test_default_pricing_all_periods() {
+        let config = default_pricing();
+        // Verify all periods exist
+        for period in &["1d", "7d", "30d", "90d", "365d"] {
+            assert!(config.contains_key(*period), "Missing period: {}", period);
+            let m = config.get(*period).unwrap();
+            assert!(m.contains_key("subdomain"), "Missing subdomain for {}", period);
+            assert!(m.contains_key("email"), "Missing email for {}", period);
+            assert!(m.contains_key("nip05"), "Missing nip05 for {}", period);
+            assert!(m.contains_key("bundle"), "Missing bundle for {}", period);
+        }
+    }
+
+    /// Bug 3: Bundle price should be less than sum of individual services
+    #[test]
+    fn test_bundle_discount_all_plans() {
+        let config = default_pricing();
+        for period in &["1d", "7d", "30d", "90d", "365d"] {
+            let m = config.get(*period).unwrap();
+            let individual_sum = m["subdomain"] + m["email"] + m["nip05"];
+            let bundle = m["bundle"];
+            assert!(bundle < individual_sum,
+                "Bundle {} should be less than individual sum {} for {}",
+                bundle, individual_sum, period);
+        }
+    }
+
+    /// Rental with webhook_url field
+    #[test]
+    fn test_rental_webhook_url_serde() {
+        let json = r#"{"username":"bob","status":"active","created_at":"2026-01-01T00:00:00Z","expires_at":"2026-02-01T00:00:00Z","plan":"30d","services":{},"management_token":"mgmt_abc","webhook_url":"https://example.com/hook"}"#;
+        let rental: Rental = serde_json::from_str(json).unwrap();
+        assert_eq!(rental.webhook_url, Some("https://example.com/hook".to_string()));
+
+        // Without webhook_url
+        let json2 = r#"{"username":"bob","status":"active","created_at":"2026-01-01T00:00:00Z","expires_at":"2026-02-01T00:00:00Z","plan":"30d","services":{}}"#;
+        let rental2: Rental = serde_json::from_str(json2).unwrap();
+        assert_eq!(rental2.webhook_url, None);
+    }
 }
