@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>noscha.io — Admin Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d0d0d;--surface:#1a1a1a;--border:#2a2a2a;--text:#e0e0e0;--muted:#888;--purple:#8b5cf6;--purple-dim:#6d28d9;--orange:#f97316;--orange-dim:#c2410c;--green:#22c55e;--red:#ef4444;--yellow:#eab308}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
+a{color:var(--purple);text-decoration:none}
+.container{max-width:960px;margin:0 auto;padding:2rem 1.5rem}
+
+/* Header */
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem}
+.logo{font-size:1.5rem;font-weight:700}
+.logo span:first-child{color:var(--purple)}
+.logo span:nth-child(2){color:var(--orange)}
+.logo span:last-child{color:var(--muted);font-size:.9rem;font-weight:400;margin-left:.5rem}
+.logout-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:.4rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem}
+.logout-btn:hover{border-color:var(--red);color:var(--red)}
+
+/* Stats cards */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.5rem}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem;text-align:center}
+.stat-val{font-size:1.5rem;font-weight:700;color:var(--purple)}
+.stat-val.warn{color:var(--yellow)}
+.stat-val.revenue{color:var(--orange)}
+.stat-label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:.25rem}
+
+/* Section */
+.section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem}
+.section h2{font-size:1.1rem;margin-bottom:1rem;color:var(--text)}
+
+/* Toolbar */
+.toolbar{display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center}
+.filter-btn{padding:.4rem .8rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--muted);cursor:pointer;font-size:.8rem;transition:all .2s}
+.filter-btn:hover{border-color:var(--purple);color:var(--text)}
+.filter-btn.active{border-color:var(--purple);background:var(--purple-dim);color:#fff}
+.toolbar-spacer{flex:1}
+.page-info{font-size:.8rem;color:var(--muted)}
+.page-btn{padding:.3rem .6rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--muted);cursor:pointer;font-size:.8rem}
+.page-btn:hover{border-color:var(--purple)}
+.page-btn:disabled{opacity:.3;cursor:not-allowed}
+
+/* Table */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{text-align:left;padding:.5rem .5rem;border-bottom:2px solid var(--border);color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+td{padding:.5rem .5rem;border-bottom:1px solid var(--border);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(139,92,246,.05)}
+
+/* Status badges */
+.badge{display:inline-block;padding:.15rem .5rem;border-radius:12px;font-size:.75rem;font-weight:600}
+.badge-active{background:#22c55e22;color:var(--green)}
+.badge-expired{background:#88888822;color:var(--muted)}
+.badge-banned{background:#ef444422;color:var(--red)}
+.badge-warn{background:#eab30822;color:var(--yellow)}
+
+/* Service pills */
+.svc-pill{display:inline-block;padding:.1rem .35rem;border-radius:4px;font-size:.65rem;margin-right:.2rem;background:var(--bg);border:1px solid var(--border);color:var(--muted)}
+.svc-pill.on{border-color:var(--purple);color:var(--purple)}
+
+/* Action buttons */
+.act-btn{padding:.25rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--muted);cursor:pointer;font-size:.7rem;margin-right:.25rem;transition:all .15s}
+.act-btn:hover{border-color:var(--purple);color:var(--text)}
+.act-ban{color:var(--red);border-color:rgba(239,68,68,.3)}
+.act-ban:hover{border-color:var(--red);background:rgba(239,68,68,.1)}
+.act-unban{color:var(--green);border-color:rgba(34,197,94,.3)}
+.act-unban:hover{border-color:var(--green);background:rgba(34,197,94,.1)}
+.act-extend{color:var(--orange);border-color:rgba(249,115,22,.3)}
+.act-extend:hover{border-color:var(--orange);background:rgba(249,115,22,.1)}
+.act-revoke{color:var(--red);border-color:rgba(239,68,68,.3)}
+.act-revoke:hover{border-color:var(--red);background:rgba(239,68,68,.1)}
+
+/* Login screen */
+#login-screen{max-width:360px;margin:15vh auto}
+#login-screen .logo{font-size:2rem;text-align:center;margin-bottom:.5rem}
+#login-screen .sub{text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:2rem}
+.field{margin-bottom:1rem}
+.field label{display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem;color:var(--muted)}
+input[type=password]{width:100%;padding:.6rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.95rem;outline:none}
+input[type=password]:focus{border-color:var(--purple)}
+.btn{display:block;width:100%;padding:.75rem;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-primary{background:linear-gradient(135deg,var(--purple),var(--orange));color:#fff}
+.btn-primary:hover{opacity:.9}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.login-err{color:var(--red);font-size:.8rem;margin-top:.5rem;text-align:center;min-height:1.2em}
+
+/* Toast */
+.toast{position:fixed;bottom:2rem;right:2rem;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;font-size:.85rem;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.ok{border-color:var(--green);color:var(--green)}
+.toast.err{border-color:var(--red);color:var(--red)}
+
+/* Modal */
+.modal-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:100;display:none;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;width:340px;max-width:90vw}
+.modal h3{font-size:1rem;margin-bottom:1rem}
+.modal-actions{display:flex;gap:.5rem;margin-top:1rem}
+.modal-actions button{flex:1;padding:.5rem;border-radius:6px;font-size:.85rem;cursor:pointer;border:1px solid var(--border);background:var(--bg);color:var(--text)}
+.modal-actions .confirm{background:var(--purple);border-color:var(--purple);color:#fff}
+.modal input[type=number]{width:100%;padding:.5rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;outline:none}
+
+/* Responsive */
+@media(max-width:700px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .container{padding:1rem}
+}
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="login-screen">
+  <div class="logo"><span>noscha</span><span>.io</span></div>
+  <p class="sub">Admin Dashboard</p>
+  <div class="section">
+    <div class="field">
+      <label>Admin Token</label>
+      <input type="password" id="token-input" placeholder="Enter admin token">
+    </div>
+    <button class="btn btn-primary" id="login-btn">Login</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" style="display:none">
+<div class="container">
+  <div class="header">
+    <div class="logo"><span>noscha</span><span>.io</span><span>admin</span></div>
+    <button class="logout-btn" id="logout-btn">Logout</button>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-card"><div class="stat-val" id="s-active">-</div><div class="stat-label">Active</div></div>
+    <div class="stat-card"><div class="stat-val warn" id="s-expiring">-</div><div class="stat-label">Expiring (7d)</div></div>
+    <div class="stat-card"><div class="stat-val" id="s-banned">-</div><div class="stat-label">Banned</div></div>
+    <div class="stat-card"><div class="stat-val revenue" id="s-revenue">-</div><div class="stat-label">Revenue (sats)</div></div>
+  </div>
+
+  <!-- Rentals -->
+  <div class="section">
+    <h2>Rentals</h2>
+    <div class="toolbar">
+      <button class="filter-btn active" data-filter="">All</button>
+      <button class="filter-btn" data-filter="active">Active</button>
+      <button class="filter-btn" data-filter="expired">Expired</button>
+      <button class="filter-btn" data-filter="banned">Banned</button>
+      <div class="toolbar-spacer"></div>
+      <button class="page-btn" id="prev-btn" disabled>&lt; Prev</button>
+      <span class="page-info" id="page-info">-</span>
+      <button class="page-btn" id="next-btn" disabled>Next &gt;</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>User</th><th>Status</th><th>Plan</th><th>Remaining</th><th>Services</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="rentals-body"><tr><td colspan="6" style="text-align:center;color:var(--muted)">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Extend Modal -->
+<div class="modal-bg" id="extend-modal">
+  <div class="modal">
+    <h3>Extend rental: <span id="extend-user"></span></h3>
+    <div class="field">
+      <label>Days to add</label>
+      <input type="number" id="extend-days" value="30" min="1" max="365">
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeModal()">Cancel</button>
+      <button class="confirm" id="extend-confirm">Extend</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  var token = localStorage.getItem('noscha_admin_token') || '';
+  var currentPage = 1;
+  var currentFilter = '';
+  var pageLimit = 20;
+
+  // Elements
+  var loginScreen = document.getElementById('login-screen');
+  var dashboard = document.getElementById('dashboard');
+  var tokenInput = document.getElementById('token-input');
+  var loginBtn = document.getElementById('login-btn');
+  var loginErr = document.getElementById('login-err');
+  var logoutBtn = document.getElementById('logout-btn');
+  var rentalsBody = document.getElementById('rentals-body');
+  var prevBtn = document.getElementById('prev-btn');
+  var nextBtn = document.getElementById('next-btn');
+  var pageInfo = document.getElementById('page-info');
+
+  // Auto-login if token saved
+  if(token){showDashboard();}
+
+  loginBtn.addEventListener('click', doLogin);
+  tokenInput.addEventListener('keydown', function(e){if(e.key==='Enter')doLogin();});
+
+  function doLogin(){
+    token = tokenInput.value.trim();
+    if(!token){loginErr.textContent='Token required';return;}
+    loginErr.textContent = 'Verifying...';
+    apiFetch('/admin/stats').then(function(){
+      localStorage.setItem('noscha_admin_token', token);
+      showDashboard();
+    }).catch(function(){
+      loginErr.textContent = 'Invalid token';
+    });
+  }
+
+  logoutBtn.addEventListener('click', function(){
+    token = '';
+    localStorage.removeItem('noscha_admin_token');
+    dashboard.style.display = 'none';
+    loginScreen.style.display = 'block';
+    tokenInput.value = '';
+    loginErr.textContent = '';
+  });
+
+  function showDashboard(){
+    loginScreen.style.display = 'none';
+    dashboard.style.display = 'block';
+    loadStats();
+    loadRentals();
+  }
+
+  function apiFetch(path, opts){
+    opts = opts || {};
+    opts.headers = opts.headers || {};
+    opts.headers['Authorization'] = 'Bearer ' + token;
+    return fetch(path, opts).then(function(r){
+      if(r.status === 401) throw new Error('Unauthorized');
+      if(!r.ok) return r.text().then(function(t){throw new Error(t);});
+      var ct = r.headers.get('content-type') || '';
+      if(ct.indexOf('json') !== -1) return r.json();
+      return r.text();
+    });
+  }
+
+  function loadStats(){
+    apiFetch('/admin/stats').then(function(d){
+      document.getElementById('s-active').textContent = d.active_rentals;
+      document.getElementById('s-expiring').textContent = d.expiring_soon;
+      document.getElementById('s-banned').textContent = d.banned_users;
+      document.getElementById('s-revenue').textContent = d.total_revenue_sats.toLocaleString();
+    });
+  }
+
+  function loadRentals(){
+    var url = '/admin/rentals?page='+currentPage+'&limit='+pageLimit;
+    if(currentFilter) url += '&status='+currentFilter;
+    apiFetch(url).then(function(d){
+      renderRentals(d.rentals);
+      var totalPages = Math.max(1, Math.ceil(d.total / d.limit));
+      pageInfo.textContent = 'Page '+d.page+' / '+totalPages+' ('+d.total+' total)';
+      prevBtn.disabled = d.page <= 1;
+      nextBtn.disabled = d.page >= totalPages;
+    });
+  }
+
+  function renderRentals(list){
+    if(!list.length){
+      rentalsBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">No rentals found</td></tr>';
+      return;
+    }
+    var html = '';
+    list.forEach(function(r){
+      var badgeCls = r.status === 'active' ? 'badge-active' : r.status === 'banned' ? 'badge-banned' : 'badge-expired';
+      if(r.status === 'active' && r.days_remaining <= 3) badgeCls = 'badge-warn';
+      var daysText = r.days_remaining > 0 ? r.days_remaining+'d' : 'expired';
+      var svcs = '';
+      svcs += '<span class="svc-pill'+(r.has_email?' on':'')+'">Email</span>';
+      svcs += '<span class="svc-pill'+(r.has_subdomain?' on':'')+'">DNS</span>';
+      svcs += '<span class="svc-pill'+(r.has_nip05?' on':'')+'">NIP-05</span>';
+
+      var actions = '';
+      if(r.status === 'banned'){
+        actions += '<button class="act-btn act-unban" onclick="doUnban(\''+esc(r.username)+'\')">Unban</button>';
+      } else {
+        if(r.status === 'active'){
+          actions += '<button class="act-btn act-extend" onclick="openExtend(\''+esc(r.username)+'\')">Extend</button>';
+          actions += '<button class="act-btn act-revoke" onclick="doRevoke(\''+esc(r.username)+'\')">Revoke</button>';
+        }
+        actions += '<button class="act-btn act-ban" onclick="doBan(\''+esc(r.username)+'\')">Ban</button>';
+      }
+
+      html += '<tr>';
+      html += '<td><strong>'+esc(r.username)+'</strong></td>';
+      html += '<td><span class="badge '+badgeCls+'">'+esc(r.status)+'</span></td>';
+      html += '<td>'+esc(r.plan)+'</td>';
+      html += '<td>'+daysText+'</td>';
+      html += '<td>'+svcs+'</td>';
+      html += '<td>'+actions+'</td>';
+      html += '</tr>';
+    });
+    rentalsBody.innerHTML = html;
+  }
+
+  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+  // Filters
+  document.querySelectorAll('.filter-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.filter-btn').forEach(function(b){b.classList.remove('active');});
+      btn.classList.add('active');
+      currentFilter = btn.getAttribute('data-filter');
+      currentPage = 1;
+      loadRentals();
+    });
+  });
+
+  // Pagination
+  prevBtn.addEventListener('click', function(){if(currentPage>1){currentPage--;loadRentals();}});
+  nextBtn.addEventListener('click', function(){currentPage++;loadRentals();});
+
+  // Actions
+  window.doBan = function(username){
+    if(!confirm('Ban user "'+username+'"? Their services will be stopped.')) return;
+    apiFetch('/admin/ban/'+encodeURIComponent(username),{method:'POST'}).then(function(){
+      toast('Banned: '+username, 'ok');
+      loadStats();loadRentals();
+    }).catch(function(e){toast('Error: '+e.message, 'err');});
+  };
+
+  window.doUnban = function(username){
+    if(!confirm('Unban user "'+username+'"?')) return;
+    apiFetch('/admin/unban/'+encodeURIComponent(username),{method:'POST'}).then(function(){
+      toast('Unbanned: '+username, 'ok');
+      loadStats();loadRentals();
+    }).catch(function(e){toast('Error: '+e.message, 'err');});
+  };
+
+  window.doRevoke = function(username){
+    if(!confirm('Revoke rental for "'+username+'"? Services will be stopped immediately.')) return;
+    apiFetch('/admin/revoke/'+encodeURIComponent(username),{method:'POST'}).then(function(){
+      toast('Revoked: '+username, 'ok');
+      loadStats();loadRentals();
+    }).catch(function(e){toast('Error: '+e.message, 'err');});
+  };
+
+  window.openExtend = function(username){
+    document.getElementById('extend-user').textContent = username;
+    document.getElementById('extend-days').value = 30;
+    document.getElementById('extend-modal').classList.add('open');
+    document.getElementById('extend-confirm').onclick = function(){
+      var days = parseInt(document.getElementById('extend-days').value, 10);
+      if(!days || days < 1 || days > 365){toast('Days must be 1-365','err');return;}
+      apiFetch('/admin/extend/'+encodeURIComponent(username),{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({days:days})
+      }).then(function(){
+        closeModal();
+        toast('Extended '+username+' by '+days+' days', 'ok');
+        loadStats();loadRentals();
+      }).catch(function(e){toast('Error: '+e.message, 'err');});
+    };
+  };
+
+  window.closeModal = function(){
+    document.getElementById('extend-modal').classList.remove('open');
+  };
+
+  // Toast
+  var toastTimer;
+  function toast(msg, type){
+    var el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = 'toast show '+(type||'');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){el.className='toast';}, 3000);
+  }
+})();
+</script>
+</body>
+</html>

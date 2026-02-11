@@ -1,0 +1,539 @@
+use serde::{Deserialize, Serialize};
+#[cfg(target_arch = "wasm32")]
+use worker::*;
+
+use crate::types::*;
+
+/// BAN record stored in R2 at bans/{username}.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BanRecord {
+    pub username: String,
+    pub banned_at: String,
+    pub reason: Option<String>,
+}
+
+/// Check if a username is banned by looking up bans/{username}.json in R2
+#[cfg(target_arch = "wasm32")]
+pub async fn is_banned(bucket: &worker::Bucket, username: &str) -> bool {
+    let key = format!("bans/{}.json", username);
+    matches!(bucket.get(&key).execute().await, Ok(Some(_)))
+}
+
+/// Response for GET /admin/stats
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminStatsResponse {
+    pub active_rentals: u64,
+    pub expired_rentals: u64,
+    pub banned_users: u64,
+    pub expiring_soon: u64,
+    pub total_revenue_sats: u64,
+}
+
+/// Single rental entry for admin listing
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminRentalEntry {
+    pub username: String,
+    pub status: String,
+    pub plan: Plan,
+    pub created_at: String,
+    pub expires_at: String,
+    pub days_remaining: i64,
+    pub has_email: bool,
+    pub has_subdomain: bool,
+    pub has_nip05: bool,
+}
+
+/// Paginated list response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminRentalsResponse {
+    pub rentals: Vec<AdminRentalEntry>,
+    pub total: usize,
+    pub page: usize,
+    pub limit: usize,
+}
+
+/// Request body for POST /admin/extend/{username}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExtendRequest {
+    pub days: u64,
+}
+
+/// Verify Bearer token against ADMIN_TOKEN env var
+#[cfg(target_arch = "wasm32")]
+fn verify_admin_token(req: &Request, env: &Env) -> Result<()> {
+    let token = env
+        .secret("ADMIN_TOKEN")
+        .map(|s| s.to_string())
+        .map_err(|_| Error::RustError("ADMIN_TOKEN not configured".to_string()))?;
+
+    let auth_header = req
+        .headers()
+        .get("Authorization")
+        .map_err(|_| Error::RustError("Missing Authorization header".to_string()))?
+        .ok_or_else(|| Error::RustError("Missing Authorization header".to_string()))?;
+
+    if !auth_header.starts_with("Bearer ") {
+        return Err(Error::RustError("Invalid Authorization format".to_string()));
+    }
+
+    let provided = &auth_header["Bearer ".len()..];
+    if provided != token {
+        return Err(Error::RustError("Invalid admin token".to_string()));
+    }
+
+    Ok(())
+}
+
+/// GET /admin — serve admin dashboard HTML
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_page(_req: Request, _ctx: RouteContext<()>) -> Result<Response> {
+    Response::from_html(include_str!("admin_ui.html"))
+}
+
+/// GET /admin/rentals?page=1&limit=20&status=active
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_rentals(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let url = req.url()?;
+    let params: std::collections::HashMap<String, String> = url.query_pairs().into_owned().collect();
+    let page: usize = params
+        .get("page")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1)
+        .max(1);
+    let limit: usize = params
+        .get("limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20)
+        .min(100);
+    let status_filter = params.get("status").cloned();
+
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let now_ms = js_sys::Date::now();
+
+    // Collect all rentals
+    let list = bucket.list().prefix("rentals/").execute().await?;
+    let mut entries: Vec<AdminRentalEntry> = Vec::new();
+
+    for obj_entry in list.objects() {
+        let key = obj_entry.key();
+        if let Some(obj) = bucket.get(&key).execute().await? {
+            let body = obj.body().unwrap();
+            let text = body.text().await?;
+            if let Ok(rental) = serde_json::from_str::<Rental>(&text) {
+                let expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
+                let expires_ms = expires_date.get_time();
+                let days_remaining = ((expires_ms - now_ms) / (24.0 * 60.0 * 60.0 * 1000.0)).ceil() as i64;
+
+                // Check if banned
+                let banned = is_banned(&bucket, &rental.username).await;
+                let display_status = if banned {
+                    "banned".to_string()
+                } else {
+                    rental.status.clone()
+                };
+
+                // Apply status filter
+                if let Some(ref filter) = status_filter {
+                    if filter != &display_status {
+                        continue;
+                    }
+                }
+
+                entries.push(AdminRentalEntry {
+                    username: rental.username,
+                    status: display_status,
+                    plan: rental.plan,
+                    created_at: rental.created_at,
+                    expires_at: rental.expires_at,
+                    days_remaining,
+                    has_email: rental.services.email.as_ref().map(|e| e.enabled).unwrap_or(false),
+                    has_subdomain: rental.services.subdomain.as_ref().map(|s| s.enabled).unwrap_or(false),
+                    has_nip05: rental.services.nip05.as_ref().map(|n| n.enabled).unwrap_or(false),
+                });
+            }
+        }
+    }
+
+    // Sort by expires_at descending (newest first)
+    entries.sort_by(|a, b| b.expires_at.cmp(&a.expires_at));
+
+    let total = entries.len();
+    let start = (page - 1) * limit;
+    let page_entries: Vec<AdminRentalEntry> = entries.into_iter().skip(start).take(limit).collect();
+
+    Response::from_json(&AdminRentalsResponse {
+        rentals: page_entries,
+        total,
+        page,
+        limit,
+    })
+}
+
+/// GET /admin/stats
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_stats(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let now_ms = js_sys::Date::now();
+    let soon_ms = now_ms + 7.0 * 24.0 * 60.0 * 60.0 * 1000.0; // 7 days
+
+    let mut active: u64 = 0;
+    let mut expired: u64 = 0;
+    let mut expiring_soon: u64 = 0;
+
+    let list = bucket.list().prefix("rentals/").execute().await?;
+    for obj_entry in list.objects() {
+        let key = obj_entry.key();
+        if let Some(obj) = bucket.get(&key).execute().await? {
+            let body = obj.body().unwrap();
+            let text = body.text().await?;
+            if let Ok(rental) = serde_json::from_str::<Rental>(&text) {
+                if rental.status == "active" {
+                    active += 1;
+                    let expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
+                    let expires_ms = expires_date.get_time();
+                    if expires_ms <= soon_ms {
+                        expiring_soon += 1;
+                    }
+                } else {
+                    expired += 1;
+                }
+            }
+        }
+    }
+
+    // Count bans
+    let mut banned: u64 = 0;
+    let ban_list = bucket.list().prefix("bans/").execute().await?;
+    for _ in ban_list.objects() {
+        banned += 1;
+    }
+
+    // Calculate total revenue from provisioned orders
+    let mut total_revenue: u64 = 0;
+    let order_list = bucket.list().prefix("orders/").execute().await?;
+    for obj_entry in order_list.objects() {
+        let key = obj_entry.key();
+        if let Some(obj) = bucket.get(&key).execute().await? {
+            let body = obj.body().unwrap();
+            let text = body.text().await?;
+            if let Ok(order) = serde_json::from_str::<Order>(&text) {
+                if order.status == OrderStatus::Paid || order.status == OrderStatus::Provisioned {
+                    total_revenue += order.amount_sats;
+                }
+            }
+        }
+    }
+
+    Response::from_json(&AdminStatsResponse {
+        active_rentals: active,
+        expired_rentals: expired,
+        banned_users: banned,
+        expiring_soon,
+        total_revenue_sats: total_revenue,
+    })
+}
+
+/// POST /admin/ban/{username}
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_ban(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let username = ctx.param("username").unwrap().to_string();
+    let bucket = ctx.env.bucket("BUCKET")?;
+
+    // Check if already banned
+    if is_banned(&bucket, &username).await {
+        return Response::error("User is already banned", 409);
+    }
+
+    // Create ban record
+    let now = js_sys::Date::new_0();
+    let ban = BanRecord {
+        username: username.clone(),
+        banned_at: now.to_iso_string().as_string().unwrap_or_default(),
+        reason: None,
+    };
+    let ban_json = serde_json::to_string(&ban).map_err(|e| Error::RustError(e.to_string()))?;
+    let ban_key = format!("bans/{}.json", username);
+    bucket.put(&ban_key, ban_json).execute().await?;
+
+    // Delete rental services (mark as expired, remove DNS)
+    let rental_key = format!("rentals/{}.json", username);
+    if let Some(obj) = bucket.get(&rental_key).execute().await? {
+        let body = obj.body().unwrap();
+        let text = body.text().await?;
+        if let Ok(mut rental) = serde_json::from_str::<Rental>(&text) {
+            // Delete DNS record if present
+            if let Some(ref sub) = rental.services.subdomain {
+                if let Some(ref record_id) = sub.cf_record_id {
+                    let zone_id = ctx.env.var("CF_ZONE_ID").map(|v| v.to_string()).unwrap_or_default();
+                    if !zone_id.is_empty() {
+                        let is_mock = crate::dns_mock::is_mock_dns_enabled(&ctx.env);
+                        let _ = if is_mock {
+                            crate::dns_mock::delete_dns_record(&zone_id, "", record_id).await
+                        } else {
+                            let token = ctx.env.secret("CF_API_TOKEN")?.to_string();
+                            crate::dns::delete_dns_record(&zone_id, &token, record_id).await
+                        };
+                    }
+                }
+            }
+
+            // Mark rental as expired
+            rental.status = "expired".to_string();
+            let updated = serde_json::to_string(&rental).map_err(|e| Error::RustError(e.to_string()))?;
+            bucket.put(&rental_key, updated).execute().await?;
+        }
+    }
+
+    Response::ok("banned")
+}
+
+/// POST /admin/unban/{username}
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_unban(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let username = ctx.param("username").unwrap().to_string();
+    let bucket = ctx.env.bucket("BUCKET")?;
+
+    let ban_key = format!("bans/{}.json", username);
+    if !is_banned(&bucket, &username).await {
+        return Response::error("User is not banned", 404);
+    }
+
+    bucket.delete(&ban_key).await?;
+    Response::ok("unbanned")
+}
+
+/// POST /admin/extend/{username}  body: {"days": 30}
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let username = ctx.param("username").unwrap().to_string();
+    let body: ExtendRequest = req
+        .json()
+        .await
+        .map_err(|_| Error::RustError("Invalid request body, expected {\"days\": N}".to_string()))?;
+
+    if body.days == 0 || body.days > 365 {
+        return Response::error("Days must be between 1 and 365", 400);
+    }
+
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let rental_key = format!("rentals/{}.json", username);
+
+    let obj = bucket.get(&rental_key).execute().await?;
+    match obj {
+        Some(obj) => {
+            let obj_body = obj.body().unwrap();
+            let text = obj_body.text().await?;
+            let mut rental: Rental =
+                serde_json::from_str(&text).map_err(|e| Error::RustError(e.to_string()))?;
+
+            // Extend from current expires_at (or now if already expired)
+            let now_ms = js_sys::Date::now();
+            let current_expires = js_sys::Date::new(&rental.expires_at.clone().into());
+            let base_ms = if current_expires.get_time() > now_ms {
+                current_expires.get_time()
+            } else {
+                now_ms
+            };
+            let extension_ms = body.days as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
+            let new_expires = js_sys::Date::new(&(base_ms + extension_ms).into());
+            rental.expires_at = new_expires.to_iso_string().as_string().unwrap_or_default();
+            rental.status = "active".to_string();
+
+            let updated =
+                serde_json::to_string(&rental).map_err(|e| Error::RustError(e.to_string()))?;
+            bucket.put(&rental_key, updated).execute().await?;
+
+            Response::ok("extended")
+        }
+        None => Response::error("Rental not found", 404),
+    }
+}
+
+/// POST /admin/revoke/{username}
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_revoke(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let username = ctx.param("username").unwrap().to_string();
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let rental_key = format!("rentals/{}.json", username);
+
+    let obj = bucket.get(&rental_key).execute().await?;
+    match obj {
+        Some(obj) => {
+            let obj_body = obj.body().unwrap();
+            let text = obj_body.text().await?;
+            let mut rental: Rental =
+                serde_json::from_str(&text).map_err(|e| Error::RustError(e.to_string()))?;
+
+            if rental.status != "active" {
+                return Response::error("Rental is not active", 400);
+            }
+
+            // Delete DNS record if present
+            if let Some(ref sub) = rental.services.subdomain {
+                if let Some(ref record_id) = sub.cf_record_id {
+                    let zone_id = ctx.env.var("CF_ZONE_ID").map(|v| v.to_string()).unwrap_or_default();
+                    if !zone_id.is_empty() {
+                        let is_mock = crate::dns_mock::is_mock_dns_enabled(&ctx.env);
+                        let _ = if is_mock {
+                            crate::dns_mock::delete_dns_record(&zone_id, "", record_id).await
+                        } else {
+                            let token = ctx.env.secret("CF_API_TOKEN")?.to_string();
+                            crate::dns::delete_dns_record(&zone_id, &token, record_id).await
+                        };
+                    }
+                }
+            }
+
+            // Mark as expired
+            rental.status = "expired".to_string();
+            let updated =
+                serde_json::to_string(&rental).map_err(|e| Error::RustError(e.to_string()))?;
+            bucket.put(&rental_key, updated).execute().await?;
+
+            Response::ok("revoked")
+        }
+        None => Response::error("Rental not found", 404),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ban_record_serde() {
+        let ban = BanRecord {
+            username: "spammer".to_string(),
+            banned_at: "2025-01-15T12:00:00Z".to_string(),
+            reason: Some("abuse".to_string()),
+        };
+        let json = serde_json::to_string(&ban).unwrap();
+        let parsed: BanRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.username, "spammer");
+        assert_eq!(parsed.reason, Some("abuse".to_string()));
+    }
+
+    #[test]
+    fn test_ban_record_without_reason() {
+        let ban = BanRecord {
+            username: "baduser".to_string(),
+            banned_at: "2025-02-01T00:00:00Z".to_string(),
+            reason: None,
+        };
+        let json = serde_json::to_string(&ban).unwrap();
+        let parsed: BanRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.username, "baduser");
+        assert_eq!(parsed.reason, None);
+    }
+
+    #[test]
+    fn test_extend_request_serde() {
+        let json = r#"{"days": 30}"#;
+        let req: ExtendRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.days, 30);
+    }
+
+    #[test]
+    fn test_extend_request_zero_days() {
+        let json = r#"{"days": 0}"#;
+        let req: ExtendRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.days, 0);
+        // Validation happens in handler: 0 is rejected
+    }
+
+    #[test]
+    fn test_admin_stats_response_serde() {
+        let stats = AdminStatsResponse {
+            active_rentals: 42,
+            expired_rentals: 10,
+            banned_users: 3,
+            expiring_soon: 5,
+            total_revenue_sats: 12500,
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(json["active_rentals"], 42);
+        assert_eq!(json["expired_rentals"], 10);
+        assert_eq!(json["banned_users"], 3);
+        assert_eq!(json["expiring_soon"], 5);
+        assert_eq!(json["total_revenue_sats"], 12500);
+    }
+
+    #[test]
+    fn test_admin_rental_entry_services() {
+        let entry = AdminRentalEntry {
+            username: "alice".to_string(),
+            status: "active".to_string(),
+            plan: Plan::ThirtyDays,
+            created_at: "2025-01-01T00:00:00Z".to_string(),
+            expires_at: "2025-02-01T00:00:00Z".to_string(),
+            days_remaining: 15,
+            has_email: true,
+            has_subdomain: false,
+            has_nip05: true,
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["username"], "alice");
+        assert_eq!(json["has_email"], true);
+        assert_eq!(json["has_subdomain"], false);
+        assert_eq!(json["has_nip05"], true);
+        assert_eq!(json["days_remaining"], 15);
+    }
+
+    #[test]
+    fn test_admin_rentals_response_pagination() {
+        let resp = AdminRentalsResponse {
+            rentals: vec![],
+            total: 50,
+            page: 3,
+            limit: 20,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["total"], 50);
+        assert_eq!(json["page"], 3);
+        assert_eq!(json["limit"], 20);
+        assert!(json["rentals"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_banned_status_display() {
+        // Verify that "banned" is a valid status string for display
+        let entry = AdminRentalEntry {
+            username: "baduser".to_string(),
+            status: "banned".to_string(),
+            plan: Plan::OneDay,
+            created_at: "2025-01-01T00:00:00Z".to_string(),
+            expires_at: "2025-01-02T00:00:00Z".to_string(),
+            days_remaining: -5,
+            has_email: false,
+            has_subdomain: false,
+            has_nip05: false,
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["status"], "banned");
+        assert_eq!(json["days_remaining"], -5);
+    }
+}

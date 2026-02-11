@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod dns;
 pub mod email;
 pub mod nip05;
@@ -17,6 +18,11 @@ use serde::Serialize;
 #[cfg(target_arch = "wasm32")]
 use worker::*;
 
+#[cfg(target_arch = "wasm32")]
+use admin::{
+    handle_admin_ban, handle_admin_extend, handle_admin_page, handle_admin_rentals,
+    handle_admin_revoke, handle_admin_stats, handle_admin_unban,
+};
 #[cfg(target_arch = "wasm32")]
 use dns::DnsRecordType;
 #[cfg(target_arch = "wasm32")]
@@ -74,6 +80,16 @@ async fn handle_check_username(
 
     // Check R2 for existing active rental
     let bucket = ctx.env.bucket("BUCKET")?;
+
+    // Check if username is banned
+    if admin::is_banned(&bucket, username).await {
+        return Response::from_json(&CheckUsernameResponse {
+            available: false,
+            username: username.to_string(),
+            error: Some("This username is blocked".to_string()),
+        });
+    }
+
     let key = format!("rentals/{}.json", username);
     let existing = bucket.get(&key).execute().await?;
 
@@ -112,6 +128,12 @@ async fn handle_create_order(
 
     // Check availability
     let bucket = ctx.env.bucket("BUCKET")?;
+
+    // Check if username is banned
+    if admin::is_banned(&bucket, &body.username).await {
+        return Response::error("This username is blocked", 403);
+    }
+
     let rental_key = format!("rentals/{}.json", body.username);
     if bucket.get(&rental_key).execute().await?.is_some() {
         return Response::error("Username is already taken", 409);
@@ -521,6 +543,14 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/webhook/coinos", handle_coinos_webhook)
         .get_async("/.well-known/nostr.json", handle_nip05)
         .options_async("/.well-known/nostr.json", handle_nip05_options)
+        // Admin routes
+        .get_async("/admin", handle_admin_page)
+        .get_async("/admin/rentals", handle_admin_rentals)
+        .get_async("/admin/stats", handle_admin_stats)
+        .post_async("/admin/ban/:username", handle_admin_ban)
+        .post_async("/admin/unban/:username", handle_admin_unban)
+        .post_async("/admin/extend/:username", handle_admin_extend)
+        .post_async("/admin/revoke/:username", handle_admin_revoke)
         .run(req, env)
         .await
 }
