@@ -37,7 +37,7 @@ pub struct AdminRentalEntry {
     pub plan: Plan,
     pub created_at: String,
     pub expires_at: String,
-    pub days_remaining: i64,
+    pub minutes_remaining: i64,
     pub has_email: bool,
     pub has_subdomain: bool,
     pub has_nip05: bool,
@@ -55,7 +55,7 @@ pub struct AdminRentalsResponse {
 /// Request body for POST /admin/extend/{username}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExtendRequest {
-    pub days: u64,
+    pub minutes: u64,
 }
 
 /// Verify session token from X-Admin-Token header against R2 sessions store
@@ -276,7 +276,7 @@ pub async fn handle_admin_rentals(req: Request, ctx: RouteContext<()>) -> Result
             if let Ok(rental) = serde_json::from_str::<Rental>(&text) {
                 let expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
                 let expires_ms = expires_date.get_time();
-                let days_remaining = ((expires_ms - now_ms) / (24.0 * 60.0 * 60.0 * 1000.0)).ceil() as i64;
+                let minutes_remaining = ((expires_ms - now_ms) / (60.0 * 1000.0)).ceil() as i64;
 
                 // Check if banned
                 let banned = is_banned(&bucket, &rental.username).await;
@@ -299,7 +299,7 @@ pub async fn handle_admin_rentals(req: Request, ctx: RouteContext<()>) -> Result
                     plan: rental.plan,
                     created_at: rental.created_at,
                     expires_at: rental.expires_at,
-                    days_remaining,
+                    minutes_remaining,
                     has_email: rental.services.email.as_ref().map(|e| e.enabled).unwrap_or(false),
                     has_subdomain: rental.services.subdomain.as_ref().map(|s| s.enabled).unwrap_or(false),
                     has_nip05: rental.services.nip05.as_ref().map(|n| n.enabled).unwrap_or(false),
@@ -467,7 +467,7 @@ pub async fn handle_admin_unban(req: Request, ctx: RouteContext<()>) -> Result<R
     Response::ok("unbanned")
 }
 
-/// POST /admin/extend/{username}  body: {"days": 30}
+/// POST /admin/extend/{username}  body: {"minutes": 30}
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let bucket = ctx.env.bucket("BUCKET")?;
@@ -479,10 +479,10 @@ pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Res
     let body: ExtendRequest = req
         .json()
         .await
-        .map_err(|_| Error::RustError("Invalid request body, expected {\"days\": N}".to_string()))?;
+        .map_err(|_| Error::RustError("Invalid request body, expected {\"minutes\": N}".to_string()))?;
 
-    if body.days == 0 || body.days > 365 {
-        return Response::error("Days must be between 1 and 365", 400);
+    if body.minutes == 0 || body.minutes > 525600 {
+        return Response::error("Minutes must be between 1 and 525600", 400);
     }
     let rental_key = format!("rentals/{}.json", username);
 
@@ -502,7 +502,7 @@ pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Res
             } else {
                 now_ms
             };
-            let extension_ms = body.days as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
+            let extension_ms = body.minutes as f64 * 60.0 * 1000.0;
             let new_expires = js_sys::Date::new(&(base_ms + extension_ms).into());
             rental.expires_at = new_expires.to_iso_string().as_string().unwrap_or_default();
             rental.status = "active".to_string();
@@ -600,16 +600,16 @@ mod tests {
 
     #[test]
     fn test_extend_request_serde() {
-        let json = r#"{"days": 30}"#;
+        let json = r#"{"minutes": 30}"#;
         let req: ExtendRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.days, 30);
+        assert_eq!(req.minutes, 30);
     }
 
     #[test]
-    fn test_extend_request_zero_days() {
-        let json = r#"{"days": 0}"#;
+    fn test_extend_request_zero_minutes() {
+        let json = r#"{"minutes": 0}"#;
         let req: ExtendRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.days, 0);
+        assert_eq!(req.minutes, 0);
         // Validation happens in handler: 0 is rejected
     }
 
@@ -638,7 +638,7 @@ mod tests {
             plan: Plan::ThirtyDays,
             created_at: "2025-01-01T00:00:00Z".to_string(),
             expires_at: "2025-02-01T00:00:00Z".to_string(),
-            days_remaining: 15,
+            minutes_remaining: 15,
             has_email: true,
             has_subdomain: false,
             has_nip05: true,
@@ -648,7 +648,7 @@ mod tests {
         assert_eq!(json["has_email"], true);
         assert_eq!(json["has_subdomain"], false);
         assert_eq!(json["has_nip05"], true);
-        assert_eq!(json["days_remaining"], 15);
+        assert_eq!(json["minutes_remaining"], 15);
     }
 
     #[test]
@@ -675,13 +675,13 @@ mod tests {
             plan: Plan::OneDay,
             created_at: "2025-01-01T00:00:00Z".to_string(),
             expires_at: "2025-01-02T00:00:00Z".to_string(),
-            days_remaining: -5,
+            minutes_remaining: -5,
             has_email: false,
             has_subdomain: false,
             has_nip05: false,
         };
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(json["status"], "banned");
-        assert_eq!(json["days_remaining"], -5);
+        assert_eq!(json["minutes_remaining"], -5);
     }
 }

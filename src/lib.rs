@@ -105,6 +105,9 @@ async fn send_discord_notification(env: &Env, order: &Order) {
     };
 
     let plan_label = match order.plan {
+        Plan::FiveMinutes => "5 minutes",
+        Plan::ThirtyMinutes => "30 minutes",
+        Plan::OneHour => "1 hour",
         Plan::OneDay => "1 day",
         Plan::SevenDays => "7 days",
         Plan::ThirtyDays => "30 days",
@@ -398,7 +401,7 @@ async fn handle_confirm_webhook(
     // In mock mode, provision immediately
     let mut mgmt_token: Option<String> = None;
     if is_mock {
-        let duration_ms = order.plan.duration_days() as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
+        let duration_ms = order.plan.duration_minutes() as f64 * 60.0 * 1000.0;
         let rental_expires_ms = now_ms + duration_ms;
         let rental_expires_date = js_sys::Date::new(&(rental_expires_ms.into()));
         let rental_expires_at = rental_expires_date.to_iso_string().as_string().unwrap_or_default();
@@ -626,7 +629,7 @@ async fn handle_coinos_webhook(
 
                     let now_ms = js_sys::Date::now();
                     let duration_ms =
-                        order.plan.duration_days() as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
+                        order.plan.duration_minutes() as f64 * 60.0 * 1000.0;
 
                     // Check if this is a renewal order
                     if let Some(ref renewal_username) = order.renewal_for {
@@ -868,7 +871,7 @@ async fn handle_renew(
     // In mock mode, immediately extend the rental
     if is_mock {
         let now_ms = js_sys::Date::now();
-        let duration_ms = order.plan.duration_days() as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
+        let duration_ms = order.plan.duration_minutes() as f64 * 60.0 * 1000.0;
         let current_expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
         let current_expires_ms = current_expires_date.get_time();
         let base_ms = if current_expires_ms > now_ms {
@@ -1044,6 +1047,9 @@ fn render_my_page(rental: &Rental, env: &Env, management_token: &str) -> String 
     }
 
     let plan_label = match rental.plan {
+        Plan::FiveMinutes => "5 Minutes",
+        Plan::ThirtyMinutes => "30 Minutes",
+        Plan::OneHour => "1 Hour",
         Plan::OneDay => "1 Day",
         Plan::SevenDays => "7 Days",
         Plan::ThirtyDays => "30 Days",
@@ -1110,6 +1116,9 @@ h2{{font-size:1rem;margin-bottom:.75rem;color:var(--text)}}
 </div>
 <div class="renew-form" id="renew-form">
 <select id="renew-plan">
+<option value="5m">5 Minutes (price varies by services)</option>
+<option value="30m">30 Minutes (price varies by services)</option>
+<option value="1h">1 Hour (price varies by services)</option>
 <option value="1d">1 Day (price varies by services)</option>
 <option value="7d">7 Days (price varies by services)</option>
 <option value="30d" selected>30 Days (price varies by services)</option>

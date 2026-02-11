@@ -12,6 +12,12 @@ pub enum ServiceType {
 /// Supported rental plans with pricing in sats
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Plan {
+    #[serde(rename = "5m")]
+    FiveMinutes,
+    #[serde(rename = "30m")]
+    ThirtyMinutes,
+    #[serde(rename = "1h")]
+    OneHour,
     #[serde(rename = "1d")]
     OneDay,
     #[serde(rename = "7d")]
@@ -28,6 +34,15 @@ impl Plan {
     /// Price for a single service type
     pub fn service_price(&self, service: &ServiceType) -> u64 {
         match (self, service) {
+            (Plan::FiveMinutes, ServiceType::Subdomain) => 500,
+            (Plan::FiveMinutes, ServiceType::EmailForwarding) => 1500,
+            (Plan::FiveMinutes, ServiceType::Nip05) => 200,
+            (Plan::ThirtyMinutes, ServiceType::Subdomain) => 500,
+            (Plan::ThirtyMinutes, ServiceType::EmailForwarding) => 1500,
+            (Plan::ThirtyMinutes, ServiceType::Nip05) => 200,
+            (Plan::OneHour, ServiceType::Subdomain) => 500,
+            (Plan::OneHour, ServiceType::EmailForwarding) => 1500,
+            (Plan::OneHour, ServiceType::Nip05) => 200,
             (Plan::OneDay, ServiceType::Subdomain) => 500,
             (Plan::OneDay, ServiceType::EmailForwarding) => 1500,
             (Plan::OneDay, ServiceType::Nip05) => 200,
@@ -49,6 +64,9 @@ impl Plan {
     /// Bundle price when all 3 services are selected
     pub fn bundle_price(&self) -> u64 {
         match self {
+            Plan::FiveMinutes => 1800,
+            Plan::ThirtyMinutes => 1800,
+            Plan::OneHour => 1800,
             Plan::OneDay => 1800,
             Plan::SevenDays => 3300,
             Plan::ThirtyDays => 6500,
@@ -69,6 +87,9 @@ impl Plan {
 
     pub fn period_key(&self) -> &'static str {
         match self {
+            Plan::FiveMinutes => "5m",
+            Plan::ThirtyMinutes => "30m",
+            Plan::OneHour => "1h",
             Plan::OneDay => "1d",
             Plan::SevenDays => "7d",
             Plan::ThirtyDays => "30d",
@@ -103,11 +124,27 @@ impl Plan {
 
     pub fn duration_days(&self) -> u64 {
         match self {
+            Plan::FiveMinutes => 0,
+            Plan::ThirtyMinutes => 0,
+            Plan::OneHour => 0,
             Plan::OneDay => 1,
             Plan::SevenDays => 7,
             Plan::ThirtyDays => 30,
             Plan::NinetyDays => 90,
             Plan::OneYear => 365,
+        }
+    }
+
+    pub fn duration_minutes(&self) -> u64 {
+        match self {
+            Plan::FiveMinutes => 5,
+            Plan::ThirtyMinutes => 30,
+            Plan::OneHour => 60,
+            Plan::OneDay => 1440,
+            Plan::SevenDays => 10080,
+            Plan::ThirtyDays => 43200,
+            Plan::NinetyDays => 129600,
+            Plan::OneYear => 525600,
         }
     }
 }
@@ -340,7 +377,10 @@ pub type PricingConfig = HashMap<String, HashMap<String, u64>>;
 /// Get default pricing config
 pub fn default_pricing() -> PricingConfig {
     let mut config = HashMap::new();
-    let periods: [(&str, [(&str, u64); 4]); 5] = [
+    let periods: [(&str, [(&str, u64); 4]); 8] = [
+        ("5m", [("subdomain",100),("email",300),("nip05",50),("bundle",400)]),
+        ("30m", [("subdomain",200),("email",600),("nip05",100),("bundle",800)]),
+        ("1h", [("subdomain",300),("email",900),("nip05",150),("bundle",1200)]),
         ("1d", [("subdomain",500),("email",1500),("nip05",200),("bundle",1800)]),
         ("7d", [("subdomain",1000),("email",2500),("nip05",500),("bundle",3300)]),
         ("30d", [("subdomain",2000),("email",5000),("nip05",1000),("bundle",6500)]),
@@ -453,6 +493,9 @@ mod tests {
 
     #[test]
     fn test_plan_duration_days() {
+        assert_eq!(Plan::FiveMinutes.duration_days(), 0);
+        assert_eq!(Plan::ThirtyMinutes.duration_days(), 0);
+        assert_eq!(Plan::OneHour.duration_days(), 0);
         assert_eq!(Plan::OneDay.duration_days(), 1);
         assert_eq!(Plan::SevenDays.duration_days(), 7);
         assert_eq!(Plan::ThirtyDays.duration_days(), 30);
@@ -596,7 +639,7 @@ mod tests {
     fn test_default_pricing_all_periods() {
         let config = default_pricing();
         // Verify all periods exist
-        for period in &["1d", "7d", "30d", "90d", "365d"] {
+        for period in &["5m", "30m", "1h", "1d", "7d", "30d", "90d", "365d"] {
             assert!(config.contains_key(*period), "Missing period: {}", period);
             let m = config.get(*period).unwrap();
             assert!(m.contains_key("subdomain"), "Missing subdomain for {}", period);
@@ -610,7 +653,7 @@ mod tests {
     #[test]
     fn test_bundle_discount_all_plans() {
         let config = default_pricing();
-        for period in &["1d", "7d", "30d", "90d", "365d"] {
+        for period in &["5m", "30m", "1h", "1d", "7d", "30d", "90d", "365d"] {
             let m = config.get(*period).unwrap();
             let individual_sum = m["subdomain"] + m["email"] + m["nip05"];
             let bundle = m["bundle"];
@@ -618,6 +661,26 @@ mod tests {
                 "Bundle {} should be less than individual sum {} for {}",
                 bundle, individual_sum, period);
         }
+    }
+
+    #[test]
+    fn test_plan_duration_minutes() {
+        assert_eq!(Plan::FiveMinutes.duration_minutes(), 5);
+        assert_eq!(Plan::ThirtyMinutes.duration_minutes(), 30);
+        assert_eq!(Plan::OneHour.duration_minutes(), 60);
+        assert_eq!(Plan::OneDay.duration_minutes(), 1440);
+        assert_eq!(Plan::SevenDays.duration_minutes(), 10080);
+        assert_eq!(Plan::ThirtyDays.duration_minutes(), 43200);
+        assert_eq!(Plan::NinetyDays.duration_minutes(), 129600);
+        assert_eq!(Plan::OneYear.duration_minutes(), 525600);
+    }
+
+    #[test]
+    fn test_plan_serde_5m() {
+        let json = serde_json::to_string(&Plan::FiveMinutes).unwrap();
+        assert_eq!(json, "\"5m\"");
+        let plan: Plan = serde_json::from_str("\"5m\"").unwrap();
+        assert_eq!(plan, Plan::FiveMinutes);
     }
 
     /// Rental with webhook_url field

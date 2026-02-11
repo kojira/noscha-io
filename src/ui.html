@@ -46,7 +46,7 @@ input:focus{border-color:var(--purple)}
 .hint-loading{color:var(--muted)}
 
 /* Radio plan selector */
-.plans{display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:.5rem}
 .plan-opt{position:relative}
 .plan-opt input{position:absolute;opacity:0;pointer-events:none}
 .plan-opt label{display:block;text-align:center;padding:.6rem .25rem;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:.8rem;transition:all .2s;background:var(--bg)}
@@ -104,7 +104,7 @@ input:focus{border-color:var(--purple)}
 /* Responsive */
 @media(max-width:600px){
   .features{grid-template-columns:1fr}
-  .plans{grid-template-columns:repeat(3,1fr)}
+  .plans{grid-template-columns:repeat(auto-fit,minmax(60px,1fr))}
   .container{padding:1.25rem 1rem}
   .inline-row{flex-direction:column}
   .inline-row select,.inline-row input[type=text]{width:100%}
@@ -149,6 +149,9 @@ input:focus{border-color:var(--purple)}
       <div class="field">
         <label>Plan</label>
         <div class="plans">
+          <div class="plan-opt"><input type="radio" name="plan" id="p5m" value="5m"><label for="p5m"><span class="dur">5 min</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p30m" value="30m"><label for="p30m"><span class="dur">30 min</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p1h" value="1h"><label for="p1h"><span class="dur">1 hour</span></label></div>
           <div class="plan-opt"><input type="radio" name="plan" id="p1d" value="1d"><label for="p1d"><span class="dur">1 day</span></label></div>
           <div class="plan-opt"><input type="radio" name="plan" id="p7d" value="7d" checked><label for="p7d"><span class="dur">1 week</span></label></div>
           <div class="plan-opt"><input type="radio" name="plan" id="p30d" value="30d"><label for="p30d"><span class="dur">1 month</span></label></div>
@@ -302,8 +305,8 @@ input:focus{border-color:var(--purple)}
   });
 
   function renderPricingTable(prices) {
-    var labels = {'1d':'1 day','7d':'1 week','30d':'1 month','90d':'3 months','365d':'1 year'};
-    var periods = ['1d','7d','30d','90d','365d'];
+    var labels = {'5m':'5 min','30m':'30 min','1h':'1 hour','1d':'1 day','7d':'1 week','30d':'1 month','90d':'3 months','365d':'1 year'};
+    var periods = ['5m','30m','1h','1d','7d','30d','90d','365d'];
     var body = document.getElementById('pricing-body');
     var html = '';
     periods.forEach(function(p) {

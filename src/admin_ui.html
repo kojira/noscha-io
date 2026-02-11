@@ -129,6 +129,9 @@ tr:hover td{background:rgba(139,92,246,.05)}
           <tr><th>Duration</th><th>Subdomain</th><th>Email</th><th>NIP-05</th><th style="color:var(--green)">Bundle</th></tr>
         </thead>
         <tbody>
+          <tr><td>5 Min</td><td><input type="number" id="p-5m-subdomain" min="0"></td><td><input type="number" id="p-5m-email" min="0"></td><td><input type="number" id="p-5m-nip05" min="0"></td><td><input type="number" id="p-5m-bundle" min="0"></td></tr>
+          <tr><td>30 Min</td><td><input type="number" id="p-30m-subdomain" min="0"></td><td><input type="number" id="p-30m-email" min="0"></td><td><input type="number" id="p-30m-nip05" min="0"></td><td><input type="number" id="p-30m-bundle" min="0"></td></tr>
+          <tr><td>1 Hour</td><td><input type="number" id="p-1h-subdomain" min="0"></td><td><input type="number" id="p-1h-email" min="0"></td><td><input type="number" id="p-1h-nip05" min="0"></td><td><input type="number" id="p-1h-bundle" min="0"></td></tr>
           <tr><td>1 Day</td><td><input type="number" id="p-1d-subdomain" min="0"></td><td><input type="number" id="p-1d-email" min="0"></td><td><input type="number" id="p-1d-nip05" min="0"></td><td><input type="number" id="p-1d-bundle" min="0"></td></tr>
           <tr><td>7 Days</td><td><input type="number" id="p-7d-subdomain" min="0"></td><td><input type="number" id="p-7d-email" min="0"></td><td><input type="number" id="p-7d-nip05" min="0"></td><td><input type="number" id="p-7d-bundle" min="0"></td></tr>
           <tr><td>30 Days</td><td><input type="number" id="p-30d-subdomain" min="0"></td><td><input type="number" id="p-30d-email" min="0"></td><td><input type="number" id="p-30d-nip05" min="0"></td><td><input type="number" id="p-30d-bundle" min="0"></td></tr>
@@ -171,8 +174,8 @@ tr:hover td{background:rgba(139,92,246,.05)}
   <div class="modal">
     <h3>Extend rental: <span id="extend-user"></span></h3>
     <div class="field">
-      <label>Days to add</label>
-      <input type="number" id="extend-days" value="30" min="1" max="365">
+      <label>Minutes to add</label>
+      <input type="number" id="extend-minutes" value="1440" min="1" max="525600">
     </div>
     <div class="modal-actions">
       <button onclick="closeModal()">Cancel</button>
@@ -311,7 +314,7 @@ tr:hover td{background:rgba(139,92,246,.05)}
 
   function loadPricing() {
     apiFetch('/api/admin/pricing').then(function(d) {
-      var periods = ['1d','7d','30d','90d','365d'];
+      var periods = ['5m','30m','1h','1d','7d','30d','90d','365d'];
       var services = ['subdomain','email','nip05','bundle'];
       periods.forEach(function(p) {
         services.forEach(function(s) {
@@ -327,7 +330,7 @@ tr:hover td{background:rgba(139,92,246,.05)}
     var status = document.getElementById('pricing-status');
     btn.disabled = true;
     status.textContent = 'Saving...';
-    var periods = ['1d','7d','30d','90d','365d'];
+    var periods = ['5m','30m','1h','1d','7d','30d','90d','365d'];
     var services = ['subdomain','email','nip05','bundle'];
     var pricing = {};
     periods.forEach(function(p) {
@@ -373,8 +376,8 @@ tr:hover td{background:rgba(139,92,246,.05)}
     var html = '';
     list.forEach(function(r) {
       var badgeCls = r.status === 'active' ? 'badge-active' : r.status === 'banned' ? 'badge-banned' : 'badge-expired';
-      if (r.status === 'active' && r.days_remaining <= 3) badgeCls = 'badge-warn';
-      var daysText = r.days_remaining > 0 ? r.days_remaining + 'd' : 'expired';
+      if (r.status === 'active' && r.minutes_remaining <= 4320) badgeCls = 'badge-warn';
+      var daysText = r.minutes_remaining > 0 ? (r.minutes_remaining < 60 ? r.minutes_remaining + 'm' : r.minutes_remaining < 1440 ? Math.round(r.minutes_remaining / 60) + 'h' : Math.round(r.minutes_remaining / 1440) + 'd') : 'expired';
       var svcs = '';
       svcs += '<span class="svc-pill' + (r.has_email ? ' on' : '') + '">Email</span>';
       svcs += '<span class="svc-pill' + (r.has_subdomain ? ' on' : '') + '">DNS</span>';
@@ -439,17 +442,17 @@ tr:hover td{background:rgba(139,92,246,.05)}
 
   window.openExtend = function(username) {
     document.getElementById('extend-user').textContent = username;
-    document.getElementById('extend-days').value = 30;
+    document.getElementById('extend-minutes').value = 1440;
     document.getElementById('extend-modal').classList.add('open');
     document.getElementById('extend-confirm').onclick = function() {
-      var days = parseInt(document.getElementById('extend-days').value, 10);
-      if (!days || days < 1 || days > 365) { toast('Days must be 1-365', 'err'); return; }
+      var minutes = parseInt(document.getElementById('extend-minutes').value, 10);
+      if (!minutes || minutes < 1 || minutes > 525600) { toast('Minutes must be 1-525600', 'err'); return; }
       apiFetch('/api/admin/extend/' + encodeURIComponent(username), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ days: days })
+        body: JSON.stringify({ minutes: minutes })
       }).then(function() {
-        closeModal(); toast('Extended ' + username + ' by ' + days + ' days', 'ok'); loadStats(); loadRentals();
+        closeModal(); toast('Extended ' + username + ' by ' + minutes + ' minutes', 'ok'); loadStats(); loadRentals();
       }).catch(function(e) { toast('Error: ' + e.message, 'err'); });
     };
   };
