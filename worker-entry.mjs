@@ -179,8 +179,11 @@ async function handleListMail(request, env, username) {
 async function handleGetMailById(request, env, username, mailId) {
   const url = new URL(request.url);
   const token = url.searchParams.get("token");
-  const auth = await authenticateMailRequest(env, username, token);
-  if (auth.error) return new Response(JSON.stringify({ error: auth.error }), { status: auth.status, headers: { "Content-Type": "application/json" } });
+  // view_url from webhook: token なしでアクセス可（URLが秘密鍵代わり）
+  if (token) {
+    const auth = await authenticateMailRequest(env, username, token);
+    if (auth.error) return new Response(JSON.stringify({ error: auth.error }), { status: auth.status, headers: { "Content-Type": "application/json" } });
+  }
 
   const key = `inbox/${username}/${mailId}.json`;
   const obj = await env.BUCKET.get(key);

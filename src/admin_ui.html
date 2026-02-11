@@ -223,6 +223,22 @@ tr:hover td{background:rgba(139,92,246,.05)}
   </div>
 </div>
 
+<!-- Edit Webhook Modal -->
+<div class="modal-bg" id="webhook-modal">
+  <div class="modal" style="width:400px">
+    <h3>Edit webhook: <span id="webhook-user"></span></h3>
+    <div class="field">
+      <label>Webhook URL</label>
+      <input type="text" id="webhook-url-input" placeholder="https://discord.com/api/webhooks/..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;padding:.5rem .75rem;outline:none">
+    </div>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:1rem">Leave empty to disable. Discord webhook URL recommended.</p>
+    <div class="modal-actions">
+      <button onclick="closeWebhookModal()">Cancel</button>
+      <button class="confirm" id="webhook-save">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -233,6 +249,7 @@ tr:hover td{background:rgba(139,92,246,.05)}
   var currentFilter = '';
   var pageLimit = 20;
   var pricingData = {};
+  var currentRentals = [];
 
   var loginScreen = document.getElementById('login-screen');
   var dashboard = document.getElementById('dashboard');
@@ -488,6 +505,7 @@ tr:hover td{background:rgba(139,92,246,.05)}
     var url = '/api/admin/rentals?page=' + currentPage + '&limit=' + pageLimit;
     if (currentFilter) url += '&status=' + currentFilter;
     apiFetch(url).then(function(d) {
+      currentRentals = d.rentals;
       renderRentals(d.rentals);
       var totalPages = Math.max(1, Math.ceil(d.total / d.limit));
       pageInfo.textContent = 'Page ' + d.page + ' / ' + totalPages + ' (' + d.total + ' total)';
@@ -518,6 +536,7 @@ tr:hover td{background:rgba(139,92,246,.05)}
           actions += '<button class="act-btn act-extend" onclick="openExtend(\'' + esc(r.username) + '\')">Extend</button>';
           actions += '<button class="act-btn act-revoke" onclick="doRevoke(\'' + esc(r.username) + '\')">Revoke</button>';
         }
+        actions += '<button class="act-btn" onclick="openEditWebhook(\'' + esc(r.username) + '\')">Edit Webhook</button>';
         actions += '<button class="act-btn act-ban" onclick="doBan(\'' + esc(r.username) + '\')">Ban</button>';
       }
       html += '<tr>';
@@ -587,6 +606,28 @@ tr:hover td{background:rgba(139,92,246,.05)}
 
   window.closeModal = function() {
     document.getElementById('extend-modal').classList.remove('open');
+  };
+
+  window.openEditWebhook = function(username) {
+    var r = currentRentals.find(function(x) { return x.username === username; });
+    var currentUrl = (r && r.webhook_url) ? r.webhook_url : '';
+    document.getElementById('webhook-user').textContent = username;
+    document.getElementById('webhook-url-input').value = currentUrl;
+    document.getElementById('webhook-modal').classList.add('open');
+    document.getElementById('webhook-save').onclick = function() {
+      var url = document.getElementById('webhook-url-input').value.trim();
+      apiFetch('/api/admin/rentals/' + encodeURIComponent(username) + '/webhook', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhook_url: url || null })
+      }).then(function() {
+        closeWebhookModal(); toast('Webhook updated', 'ok'); loadRentals();
+      }).catch(function(e) { toast('Error: ' + e.message, 'err'); });
+    };
+  };
+
+  window.closeWebhookModal = function() {
+    document.getElementById('webhook-modal').classList.remove('open');
   };
 
   var toastTimer;

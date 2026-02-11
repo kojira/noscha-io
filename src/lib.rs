@@ -24,7 +24,7 @@ use admin::{
     handle_admin_ban, handle_admin_challenge, handle_admin_debug_webhook_get,
     handle_admin_debug_webhook_put, handle_admin_extend, handle_admin_login,
     handle_admin_page, handle_admin_pricing_get, handle_admin_pricing_put,
-    handle_admin_rentals, handle_admin_provision, handle_admin_revoke, handle_admin_stats, handle_admin_unban,
+    handle_admin_rentals, handle_admin_rental_webhook_put, handle_admin_provision, handle_admin_revoke, handle_admin_stats, handle_admin_unban,
     handle_public_pricing,
 };
 #[cfg(target_arch = "wasm32")]
@@ -1773,6 +1773,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/admin/challenge", handle_admin_challenge)
         .post_async("/api/admin/login", handle_admin_login)
         .get_async("/api/admin/rentals", handle_admin_rentals)
+        .put_async("/api/admin/rentals/:username/webhook", handle_admin_rental_webhook_put)
         .get_async("/api/admin/stats", handle_admin_stats)
         .get_async("/api/admin/pricing", handle_admin_pricing_get)
         .put_async("/api/admin/pricing", handle_admin_pricing_put)

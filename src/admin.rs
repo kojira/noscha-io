@@ -41,6 +41,8 @@ pub struct AdminRentalEntry {
     pub has_email: bool,
     pub has_subdomain: bool,
     pub has_nip05: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
 }
 
 /// Paginated list response
@@ -56,6 +58,12 @@ pub struct AdminRentalsResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExtendRequest {
     pub minutes: u64,
+}
+
+/// Request body for PUT /api/admin/rentals/:username/webhook
+#[derive(Debug, Deserialize)]
+pub struct AdminWebhookRequest {
+    pub webhook_url: Option<String>,
 }
 
 /// Debug webhook config stored in R2 at config/debug_webhook.json
@@ -396,6 +404,7 @@ pub async fn handle_admin_rentals(req: Request, ctx: RouteContext<()>) -> Result
                     has_email: rental.services.email.as_ref().map(|e| e.enabled).unwrap_or(false),
                     has_subdomain: rental.services.subdomain.as_ref().map(|s| s.enabled).unwrap_or(false),
                     has_nip05: rental.services.nip05.as_ref().map(|n| n.enabled).unwrap_or(false),
+                    webhook_url: rental.webhook_url.clone(),
                 });
             }
         }
@@ -605,6 +614,49 @@ pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Res
             bucket.put(&rental_key, updated).execute().await?;
 
             Response::ok("extended")
+        }
+        None => Response::error("Rental not found", 404),
+    }
+}
+
+/// PUT /api/admin/rentals/:username/webhook  body: {"webhook_url": "https://..."} or {"webhook_url": null}
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_rental_webhook_put(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let username = ctx.param("username").unwrap().to_string();
+    let body: AdminWebhookRequest = req.json().await
+        .map_err(|_| Error::RustError("Invalid request body, expected {\"webhook_url\": string|null}".to_string()))?;
+
+    // Validate webhook_url if provided and non-empty
+    if let Some(ref url) = body.webhook_url {
+        if !url.trim().is_empty() && !url.starts_with("https://") && !url.starts_with("http://") {
+            return Response::error("webhook_url must be a valid HTTP(S) URL", 400);
+        }
+    }
+
+    let rental_key = format!("rentals/{}.json", username);
+    let obj = bucket.get(&rental_key).execute().await?;
+    match obj {
+        Some(obj) => {
+            let obj_body = obj.body().unwrap();
+            let text = obj_body.text().await?;
+            let mut rental: Rental =
+                serde_json::from_str(&text).map_err(|e| Error::RustError(e.to_string()))?;
+
+            // Normalize: empty string -> None
+            let new_url = body.webhook_url.as_ref()
+                .and_then(|s| if s.trim().is_empty() { None } else { Some(s.trim().to_string()) });
+            rental.webhook_url = new_url;
+
+            let updated =
+                serde_json::to_string(&rental).map_err(|e| Error::RustError(e.to_string()))?;
+            bucket.put(&rental_key, updated).execute().await?;
+
+            Response::ok("updated")
         }
         None => Response::error("Rental not found", 404),
     }
@@ -875,6 +927,7 @@ mod tests {
             has_email: true,
             has_subdomain: false,
             has_nip05: true,
+            webhook_url: None,
         };
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(json["username"], "alice");
@@ -930,6 +983,7 @@ mod tests {
             has_email: false,
             has_subdomain: false,
             has_nip05: false,
+            webhook_url: None,
         };
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(json["status"], "banned");

@@ -97,6 +97,40 @@ function decodeBase64UTF8(base64str, charset = 'utf-8') {
   return new TextDecoder(charset).decode(bytes);
 }
 
+/** Normalize charset to TextDecoder label (shift-jis, euc-jp, iso-2022-jp, utf-8) */
+function normalizeCharset(charset) {
+  const c = (charset || 'utf-8').toLowerCase().replace(/_/g, '-');
+  const map = {
+    'shift-jis': 'shift-jis', 'shift_jis': 'shift-jis', 'sjis': 'shift-jis', 'x-sjis': 'shift-jis', 'csshiftjis': 'shift-jis',
+    'euc-jp': 'euc-jp', 'euc_jp': 'euc-jp', 'x-euc-jp': 'euc-jp', 'cseucpkdfmtjapanese': 'euc-jp',
+    'iso-2022-jp': 'iso-2022-jp', 'iso2022jp': 'iso-2022-jp', 'csiso2022jp': 'iso-2022-jp'
+  };
+  return map[c] || c;
+}
+
+/**
+ * Decode RFC 2047 encoded-words in header values (e.g. Subject).
+ * Format: =?charset?B?base64?= or =?charset?Q?quoted-printable?=
+ * Supports: UTF-8, Shift-JIS, EUC-JP, ISO-2022-JP
+ */
+function decodeRFC2047(str) {
+  if (!str || typeof str !== 'string') return str || '';
+  return str.replace(/=\?([^?]*)\?([BQbq])\?([^?]*)\?=/g, (full, charset, enc, payload) => {
+    try {
+      const c = normalizeCharset(charset);
+      if (enc.toUpperCase() === 'B') {
+        return decodeBase64UTF8(payload.replace(/\s/g, ''), c);
+      }
+      if (enc.toUpperCase() === 'Q') {
+        const decoded = payload.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+        const bytes = new Uint8Array([...decoded].map((ch) => ch.charCodeAt(0)));
+        return new TextDecoder(c).decode(bytes);
+      }
+    } catch (_) {}
+    return full;
+  });
+}
+
 function decodeBody(body, encoding, charset = 'utf-8') {
   // Remove trailing boundary artifacts
   body = body.replace(/--[\w=+/]+--\s*$/, '').trim();
@@ -329,9 +363,10 @@ export default {
       return;
     }
 
-    // Extract subject from raw email headers
-    const subjectMatch = rawEmail.match(/^Subject:\s*(.+)$/mi);
-    const subject = subjectMatch ? subjectMatch[1].trim() : "(no subject)";
+    // Extract subject from raw email headers (handle folding per RFC 5322), decode RFC 2047
+    const subjectMatch = rawEmail.match(/^Subject:\s*([^\r\n]*(?:\r?\n[\t ][^\r\n]*)*)/im);
+    let subject = subjectMatch ? subjectMatch[1].replace(/\r?\n[\t ]/g, ' ').trim() : '(no subject)';
+    subject = decodeRFC2047(subject);
 
     // Extract Date header from raw email
     const dateMatch = rawEmail.match(/^Date:\s*(.+)$/mi);
