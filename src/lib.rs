@@ -759,6 +759,8 @@ fn render_payment_page(bolt11: &str, amount_sats: u64, expires_at: &str, order_i
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pay with Lightning — noscha.io</title>
+<link rel="icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/favicon.png">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
@@ -1483,6 +1485,8 @@ fn render_my_page(rental: &Rental, env: &Env, management_token: &str) -> String 
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>noscha.io - My Rental</title>
+<link rel="icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/favicon.png">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 :root{{--bg:#0d0d0d;--surface:#1a1a1a;--border:#2a2a2a;--text:#e0e0e0;--muted:#888;--purple:#8b5cf6;--orange:#f97316;--green:#22c55e;--red:#ef4444}}
@@ -2030,6 +2034,40 @@ async fn handle_llms_txt(_req: Request, ctx: RouteContext<()>) -> Result<Respons
     Ok(Response::ok(content)?.with_headers(headers))
 }
 
+/// GET /favicon.ico — serve favicon from R2
+#[cfg(target_arch = "wasm32")]
+async fn handle_favicon_ico(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    match bucket.get("static/favicon.ico").execute().await? {
+        Some(obj) => {
+            let body = obj.body().unwrap();
+            let bytes = body.bytes().await?;
+            let headers = Headers::new();
+            let _ = headers.set("Content-Type", "image/x-icon");
+            let _ = headers.set("Cache-Control", "public, max-age=604800");
+            Ok(Response::from_bytes(bytes)?.with_headers(headers))
+        }
+        None => Response::error("Not Found", 404),
+    }
+}
+
+/// GET /favicon.png — serve favicon PNG from R2
+#[cfg(target_arch = "wasm32")]
+async fn handle_favicon_png(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    match bucket.get("static/favicon.png").execute().await? {
+        Some(obj) => {
+            let body = obj.body().unwrap();
+            let bytes = body.bytes().await?;
+            let headers = Headers::new();
+            let _ = headers.set("Content-Type", "image/png");
+            let _ = headers.set("Cache-Control", "public, max-age=604800");
+            Ok(Response::from_bytes(bytes)?.with_headers(headers))
+        }
+        None => Response::error("Not Found", 404),
+    }
+}
+
 /// GET /og-image.png — serve OG image from R2
 #[cfg(target_arch = "wasm32")]
 async fn handle_og_image(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
@@ -2070,6 +2108,8 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get("/", |_, _| {
             Response::from_html(ui::landing_page_html())
         })
+        .get_async("/favicon.ico", handle_favicon_ico)
+        .get_async("/favicon.png", handle_favicon_png)
         .get_async("/og-image.png", handle_og_image)
         .head_async("/og-image.png", handle_og_image)
         .get_async("/skill.md", handle_skill_md)

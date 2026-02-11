@@ -43,6 +43,8 @@ pub struct AdminRentalEntry {
     pub has_nip05: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub webhook_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub management_token: Option<String>,
 }
 
 /// Paginated list response
@@ -405,6 +407,7 @@ pub async fn handle_admin_rentals(req: Request, ctx: RouteContext<()>) -> Result
                     has_subdomain: rental.services.subdomain.as_ref().map(|s| s.enabled).unwrap_or(false),
                     has_nip05: rental.services.nip05.as_ref().map(|n| n.enabled).unwrap_or(false),
                     webhook_url: rental.webhook_url.clone(),
+                    management_token: rental.management_token.clone(),
                 });
             }
         }
@@ -928,6 +931,7 @@ mod tests {
             has_subdomain: false,
             has_nip05: true,
             webhook_url: None,
+            management_token: Some("mgmt_abc123".to_string()),
         };
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(json["username"], "alice");
@@ -984,6 +988,7 @@ mod tests {
             has_subdomain: false,
             has_nip05: false,
             webhook_url: None,
+            management_token: None,
         };
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(json["status"], "banned");

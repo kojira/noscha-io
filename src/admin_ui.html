@@ -14,6 +14,8 @@
 <meta name="twitter:title" content="noscha.io — Admin Dashboard">
 <meta name="twitter:description" content="Admin panel for noscha.io Lightning-powered identity services.">
 <meta name="twitter:image" content="https://noscha.io/og-image.png">
+<link rel="icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/favicon.png">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#0d0d0d;--surface:#1a1a1a;--border:#2a2a2a;--text:#e0e0e0;--muted:#888;--purple:#8b5cf6;--purple-dim:#6d28d9;--orange:#f97316;--orange-dim:#c2410c;--green:#22c55e;--red:#ef4444;--yellow:#eab308}
@@ -199,9 +201,9 @@ tr:hover td{background:rgba(139,92,246,.05)}
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr><th>User</th><th>Status</th><th>Plan</th><th>Remaining</th><th>Services</th><th>Actions</th></tr>
+          <tr><th>User</th><th>My Page</th><th>Status</th><th>Plan</th><th>Remaining</th><th>Services</th><th>Actions</th></tr>
         </thead>
-        <tbody id="rentals-body"><tr><td colspan="6" style="text-align:center;color:var(--muted)">Loading...</td></tr></tbody>
+        <tbody id="rentals-body"><tr><td colspan="7" style="text-align:center;color:var(--muted)">Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -516,9 +518,10 @@ tr:hover td{background:rgba(139,92,246,.05)}
 
   function renderRentals(list) {
     if (!list.length) {
-      rentalsBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">No rentals found</td></tr>';
+      rentalsBody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted)">No rentals found</td></tr>';
       return;
     }
+    var origin = window.location.origin || 'https://noscha.io';
     var html = '';
     list.forEach(function(r) {
       var badgeCls = r.status === 'active' ? 'badge-active' : r.status === 'banned' ? 'badge-banned' : 'badge-expired';
@@ -528,6 +531,11 @@ tr:hover td{background:rgba(139,92,246,.05)}
       svcs += '<span class="svc-pill' + (r.has_email ? ' on' : '') + '">Email</span>';
       svcs += '<span class="svc-pill' + (r.has_subdomain ? ' on' : '') + '">DNS</span>';
       svcs += '<span class="svc-pill' + (r.has_nip05 ? ' on' : '') + '">NIP-05</span>';
+      var myPageCell = '-';
+      if (r.management_token) {
+        var myPageUrl = origin + '/my/' + r.management_token;
+        myPageCell = '<a href="' + esc(myPageUrl) + '" target="_blank" rel="noopener">My Page</a>';
+      }
       var actions = '';
       if (r.status === 'banned') {
         actions += '<button class="act-btn act-unban" onclick="doUnban(\'' + esc(r.username) + '\')">Unban</button>';
@@ -541,6 +549,7 @@ tr:hover td{background:rgba(139,92,246,.05)}
       }
       html += '<tr>';
       html += '<td><strong>' + esc(r.username) + '</strong></td>';
+      html += '<td>' + myPageCell + '</td>';
       html += '<td><span class="badge ' + badgeCls + '">' + esc(r.status) + '</span></td>';
       html += '<td>' + esc(r.plan) + '</td>';
       html += '<td>' + daysText + '</td>';
