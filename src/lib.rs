@@ -1,12 +1,22 @@
+mod types;
+mod validation;
+
+#[cfg(target_arch = "wasm32")]
+mod coinos;
+#[cfg(target_arch = "wasm32")]
+mod coinos_mock;
+
+#[cfg(target_arch = "wasm32")]
 use serde::Serialize;
+#[cfg(target_arch = "wasm32")]
 use worker::*;
 
-mod coinos;
-mod coinos_mock;
-mod types;
-
+#[cfg(target_arch = "wasm32")]
 use types::*;
+#[cfg(target_arch = "wasm32")]
+use validation::validate_username;
 
+#[cfg(target_arch = "wasm32")]
 #[derive(Serialize)]
 struct ServiceInfo {
     name: &'static str,
@@ -16,56 +26,28 @@ struct ServiceInfo {
     pricing: &'static str,
 }
 
+#[cfg(target_arch = "wasm32")]
 #[derive(Serialize)]
 struct HealthResponse {
     status: &'static str,
 }
 
-/// Reserved usernames that cannot be registered
-const RESERVED_USERNAMES: &[&str] = &[
-    "admin", "www", "mail", "api", "ns1", "ns2", "_dmarc", "autoconfig",
-    "postmaster", "abuse", "hostmaster", "webmaster", "ftp", "smtp", "imap",
-    "pop", "pop3", "root", "test", "localhost", "noscha",
-];
-
-/// Validate username: 3-20 chars, lowercase alphanumeric + hyphen, no leading/trailing hyphen
-fn validate_username(username: &str) -> std::result::Result<(), String> {
-    if username.len() < 3 {
-        return Err("Username must be at least 3 characters".to_string());
-    }
-    if username.len() > 20 {
-        return Err("Username must be at most 20 characters".to_string());
-    }
-    if username.starts_with('-') || username.ends_with('-') {
-        return Err("Username cannot start or end with a hyphen".to_string());
-    }
-    if !username
-        .chars()
-        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-    {
-        return Err(
-            "Username can only contain lowercase letters, digits, and hyphens".to_string(),
-        );
-    }
-    if RESERVED_USERNAMES.contains(&username) {
-        return Err("This username is reserved".to_string());
-    }
-    Ok(())
-}
-
 /// Generate a simple order ID using timestamp
+#[cfg(target_arch = "wasm32")]
 fn generate_order_id() -> String {
     let now = js_sys::Date::now() as u64;
     format!("ord_{:x}", now)
 }
 
 /// Generate a webhook secret for order verification
+#[cfg(target_arch = "wasm32")]
 fn generate_webhook_secret() -> String {
     let now = js_sys::Date::now() as u64;
     format!("sec_{:x}", now)
 }
 
 /// GET /api/check/{username}
+#[cfg(target_arch = "wasm32")]
 async fn handle_check_username(
     _req: Request,
     ctx: RouteContext<()>,
@@ -95,6 +77,7 @@ async fn handle_check_username(
 }
 
 /// POST /api/order
+#[cfg(target_arch = "wasm32")]
 async fn handle_create_order(
     mut req: Request,
     ctx: RouteContext<()>,
@@ -172,6 +155,7 @@ async fn handle_create_order(
 }
 
 /// GET /api/order/{order_id}/status
+#[cfg(target_arch = "wasm32")]
 async fn handle_order_status(
     _req: Request,
     ctx: RouteContext<()>,
@@ -199,6 +183,7 @@ async fn handle_order_status(
 }
 
 /// POST /api/webhook/coinos
+#[cfg(target_arch = "wasm32")]
 async fn handle_coinos_webhook(
     mut req: Request,
     ctx: RouteContext<()>,
@@ -255,6 +240,7 @@ async fn handle_coinos_webhook(
     Response::ok("no matching order")
 }
 
+#[cfg(target_arch = "wasm32")]
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();

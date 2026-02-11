@@ -112,3 +112,42 @@ pub struct CoinosWebhookPayload {
     #[serde(default)]
     pub secret: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_plan_amount_sats() {
+        assert_eq!(Plan::OneDay.amount_sats(), 10);
+        assert_eq!(Plan::SevenDays.amount_sats(), 50);
+        assert_eq!(Plan::ThirtyDays.amount_sats(), 150);
+        assert_eq!(Plan::NinetyDays.amount_sats(), 350);
+        assert_eq!(Plan::OneYear.amount_sats(), 800);
+    }
+
+    #[test]
+    fn test_plan_duration_days() {
+        assert_eq!(Plan::OneDay.duration_days(), 1);
+        assert_eq!(Plan::SevenDays.duration_days(), 7);
+        assert_eq!(Plan::ThirtyDays.duration_days(), 30);
+        assert_eq!(Plan::NinetyDays.duration_days(), 90);
+        assert_eq!(Plan::OneYear.duration_days(), 365);
+    }
+
+    #[test]
+    fn test_plan_serde() {
+        let json = serde_json::to_string(&Plan::OneDay).unwrap();
+        assert_eq!(json, "\"1d\"");
+        let plan: Plan = serde_json::from_str("\"30d\"").unwrap();
+        assert_eq!(plan, Plan::ThirtyDays);
+    }
+
+    #[test]
+    fn test_order_status_serde() {
+        let json = serde_json::to_string(&OrderStatus::Pending).unwrap();
+        assert_eq!(json, "\"pending\"");
+        let status: OrderStatus = serde_json::from_str("\"paid\"").unwrap();
+        assert_eq!(status, OrderStatus::Paid);
+    }
+}
