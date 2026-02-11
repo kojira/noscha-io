@@ -1,4 +1,5 @@
 pub mod dns;
+pub mod email;
 pub mod types;
 pub mod validation;
 
@@ -94,6 +95,15 @@ async fn handle_create_order(
     // Validate username
     if let Err(err) = validate_username(&body.username) {
         return Response::error(err, 400);
+    }
+
+    // Validate forward_to email if email service is requested
+    if let Some(ref services) = body.services {
+        if let Some(ref email_req) = services.email {
+            if let Err(err) = validation::validate_forward_email(&email_req.forward_to) {
+                return Response::error(format!("Invalid forwarding email: {}", err), 400);
+            }
+        }
     }
 
     // Check availability

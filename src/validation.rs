@@ -5,6 +5,11 @@ pub const RESERVED_USERNAMES: &[&str] = &[
     "pop", "pop3", "root", "test", "localhost", "noscha",
 ];
 
+/// Validate a forwarding email address for email service requests
+pub fn validate_forward_email(email: &str) -> Result<(), String> {
+    crate::email::validate_email(email)
+}
+
 /// Validate username: 3-20 chars, lowercase alphanumeric + hyphen, no leading/trailing hyphen
 pub fn validate_username(username: &str) -> Result<(), String> {
     if username.len() < 3 {
@@ -68,5 +73,18 @@ mod tests {
         assert!(validate_username("admin").is_err());
         assert!(validate_username("www").is_err());
         assert!(validate_username("noscha").is_err());
+    }
+
+    #[test]
+    fn test_validate_forward_email_valid() {
+        assert!(validate_forward_email("alice@example.com").is_ok());
+        assert!(validate_forward_email("user@domain.co.jp").is_ok());
+    }
+
+    #[test]
+    fn test_validate_forward_email_invalid() {
+        assert!(validate_forward_email("").is_err());
+        assert!(validate_forward_email("not-an-email").is_err());
+        assert!(validate_forward_email("@example.com").is_err());
     }
 }

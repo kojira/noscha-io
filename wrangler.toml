@@ -17,3 +17,9 @@ DOMAIN = "noscha.io"
 # Secrets (set via `wrangler secret put`):
 # COINOS_API_TOKEN
 # WEBHOOK_SECRET
+# CF_API_TOKEN
+# CF_ZONE_ID
+
+# Email routing - catch-all forwards to this worker
+# Note: Email handler is in JS shim (src/email_shim.js) since worker-rs doesn't support email events
+# Configure in Cloudflare Dashboard: Email Routing > Catch-all > Send to Worker
