@@ -140,9 +140,9 @@ async fn send_discord_notification(env: &Env, order: &Order) {
 
     let is_renewal = order.renewal_for.is_some();
     let title = if is_renewal {
-        format!("🔄 Renewal Payment Received — {}", order.username)
+        format!("🔄 Renewal Payment Received - {}", order.username)
     } else {
-        format!("⚡ New Payment Received — {}", order.username)
+        format!("⚡ New Payment Received - {}", order.username)
     };
 
     let body = serde_json::json!({
@@ -160,8 +160,8 @@ async fn send_discord_notification(env: &Env, order: &Order) {
         }]
     });
 
-    let mut headers = Headers::new();
-    let _ = headers.set("Content-Type", "application/json");
+    let headers = Headers::new();
+    let _ = headers.set("Content-Type", "application/json; charset=utf-8");
     let req = Request::new_with_init(
         &webhook_url,
         RequestInit::new()
@@ -339,8 +339,8 @@ async fn handle_create_order(
         "challenge_url": challenge_url,
         "order_id": order_id,
     });
-    let mut headers = Headers::new();
-    let _ = headers.set("Content-Type", "application/json");
+    let headers = Headers::new();
+    let _ = headers.set("Content-Type", "application/json; charset=utf-8");
     let challenge_req = Request::new_with_init(
         &body.webhook_url,
         RequestInit::new()
@@ -1099,7 +1099,7 @@ fn render_my_page(rental: &Rental, env: &Env, management_token: &str) -> String 
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>noscha.io — My Rental</title>
+<title>noscha.io - My Rental</title>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 :root{{--bg:#0d0d0d;--surface:#1a1a1a;--border:#2a2a2a;--text:#e0e0e0;--muted:#888;--purple:#8b5cf6;--orange:#f97316;--green:#22c55e;--red:#ef4444}}
@@ -1363,7 +1363,7 @@ fn minutes_to_label(mins: u64) -> String {
 /// Generate /llms.txt content with dynamic pricing
 #[cfg(target_arch = "wasm32")]
 fn generate_llms_txt(pricing: &std::collections::HashMap<String, std::collections::HashMap<String, u64>>) -> String {
-    let static_part = "# noscha.io\n\n> Disposable email, subdomain & NIP-05 identity — paid via Lightning Network\n\n## API\n\n- Base: https://noscha.io\n- Check username: GET /api/check/{username}\n- Create order: POST /api/order {\"username\",\"plan\",\"services\":{...}}\n- Order status: GET /api/order/{order_id}/status\n- Renew: POST /api/renew {\"management_token\",\"plan\"}\n- Pricing: GET /api/pricing\n- Services: email, subdomain, nip05 (or bundle all 3)\n- Payment: Lightning Network (bolt11)\n- Full docs: https://noscha.io/skill.md\n- OpenAPI spec: https://noscha.io/api/docs\n\n## Pricing (sats)\n\n";
+    let static_part = "# noscha.io\n\n> Disposable email, subdomain & NIP-05 identity - paid via Lightning Network\n\n## API\n\n- Base: https://noscha.io\n- Check username: GET /api/check/{username}\n- Create order: POST /api/order {\"username\",\"plan\",\"services\":{...}}\n- Order status: GET /api/order/{order_id}/status\n- Renew: POST /api/renew {\"management_token\",\"plan\"}\n- Pricing: GET /api/pricing\n- Services: email, subdomain, nip05 (or bundle all 3)\n- Payment: Lightning Network (bolt11)\n- Full docs: https://noscha.io/skill.md\n- OpenAPI spec: https://noscha.io/api/docs\n\n## Pricing (sats)\n\n";
     let mut result = static_part.to_string();
 
     let mut periods: Vec<(&String, &std::collections::HashMap<String, u64>)> = pricing.iter().collect();
@@ -1395,11 +1395,11 @@ fn generate_llms_txt(pricing: &std::collections::HashMap<String, std::collection
 /// Generate /skill.md content with dynamic pricing table
 #[cfg(target_arch = "wasm32")]
 fn generate_skill_md(pricing: &std::collections::HashMap<String, std::collections::HashMap<String, u64>>) -> String {
-    let before_pricing = r#"# noscha.io — AI Agent Skill Guide
+    let before_pricing = r#"# noscha.io - AI Agent Skill Guide
 
 ## Service Overview
 
-noscha.io provides **disposable email forwarding, subdomain DNS, and NIP-05 Nostr identity** — all paid instantly via Lightning Network. No KYC, no signup, no accounts. Just pick a username, pay sats, and your services are live.
+noscha.io provides **disposable email forwarding, subdomain DNS, and NIP-05 Nostr identity** - all paid instantly via Lightning Network. No KYC, no signup, no accounts. Just pick a username, pay sats, and your services are live.
 
 **Base URL:** `https://noscha.io`
 
@@ -1469,7 +1469,7 @@ GET /api/order/{order_id}/confirm/{challenge}
 }
 ```
 
-You can include any combination of services (`email`, `subdomain`, `nip05`). `webhook_url` is **required** for all orders — email notifications are delivered via webhook.
+You can include any combination of services (`email`, `subdomain`, `nip05`). `webhook_url` is **required** for all orders - email notifications are delivered via webhook.
 
 ### Step 3: Pay the invoice & poll for status
 
@@ -1488,7 +1488,7 @@ GET /api/order/{order_id}/status
 }
 ```
 
-Save the `management_token` — it's needed for renewals and management.
+Save the `management_token` - it's needed for renewals and management.
 
 ## Endpoints Reference
 
@@ -1558,7 +1558,7 @@ Update rental settings, currently supports setting webhook URL for email notific
 "#;
 
     let after_pricing = r#"
-Bundle discount applies automatically when all 3 services are selected. Prices may change — always check `/api/pricing` for current rates.
+Bundle discount applies automatically when all 3 services are selected. Prices may change - always check `/api/pricing` for current rates.
 
 ## Ecosystem: nostaro (Nostr CLI)
 
@@ -1572,21 +1572,21 @@ nostaro profile set --nip05 yourname@noscha.io
 ```
 
 **Usage examples:**
-- `nostaro post "hello nostr"` — publish a note
-- `nostaro zap <npub> 100` — send 100 sats zap
-- `nostaro timeline` — view your timeline
-- `nostaro profile get` — check your profile
+- `nostaro post "hello nostr"` - publish a note
+- `nostaro zap <npub> 100` - send 100 sats zap
+- `nostaro timeline` - view your timeline
+- `nostaro profile get` - check your profile
 
 Get a NIP-05 identity from noscha.io and use it instantly with nostaro for a complete Nostr experience.
 
 ## Typical Agent Workflow
 
 1. **Decide** what services you need (email forwarding? subdomain? NIP-05?)
-2. **GET /api/check/{username}** — verify availability
-3. **GET /api/pricing** — confirm current pricing
-4. **POST /api/order** — create order with desired services
+2. **GET /api/check/{username}** - verify availability
+3. **GET /api/pricing** - confirm current pricing
+4. **POST /api/order** - create order with desired services
 5. **Pay** the `bolt11` invoice via any Lightning wallet/API
-6. **GET /api/order/{order_id}/status** — poll until `"provisioned"` (poll every 3s, max ~5 min)
+6. **GET /api/order/{order_id}/status** - poll until `"provisioned"` (poll every 3s, max ~5 min)
 7. **Store** the `management_token` for future renewals
 8. **POST /api/renew** when rental is nearing expiry
 
@@ -1636,7 +1636,7 @@ async fn handle_llms_txt(_req: Request, ctx: RouteContext<()>) -> Result<Respons
     let bucket = ctx.env.bucket("BUCKET")?;
     let pricing = admin::load_pricing(&bucket).await;
     let content = generate_llms_txt(&pricing);
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     let _ = headers.set("Content-Type", "text/plain; charset=utf-8");
     let _ = headers.set("Access-Control-Allow-Origin", "*");
     Ok(Response::ok(content)?.with_headers(headers))
@@ -1648,7 +1648,7 @@ async fn handle_skill_md(_req: Request, ctx: RouteContext<()>) -> Result<Respons
     let bucket = ctx.env.bucket("BUCKET")?;
     let pricing = admin::load_pricing(&bucket).await;
     let content = generate_skill_md(&pricing);
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     let _ = headers.set("Content-Type", "text/markdown; charset=utf-8");
     let _ = headers.set("Access-Control-Allow-Origin", "*");
     Ok(Response::ok(content)?.with_headers(headers))
@@ -1687,14 +1687,14 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get_async("/skill.md", handle_skill_md)
         .get_async("/llms.txt", handle_llms_txt)
         .get("/.well-known/ai-plugin.json", |_, _| {
-            let mut headers = Headers::new();
-            let _ = headers.set("Content-Type", "application/json");
+            let headers = Headers::new();
+            let _ = headers.set("Content-Type", "application/json; charset=utf-8");
             let _ = headers.set("Access-Control-Allow-Origin", "*");
             Ok(Response::ok(include_str!("ai-plugin.json"))?.with_headers(headers))
         })
         .get("/api/docs", |_, _| {
-            let mut headers = Headers::new();
-            let _ = headers.set("Content-Type", "application/json");
+            let headers = Headers::new();
+            let _ = headers.set("Content-Type", "application/json; charset=utf-8");
             let _ = headers.set("Access-Control-Allow-Origin", "*");
             Ok(Response::ok(include_str!("openapi.json"))?.with_headers(headers))
         })
@@ -1713,7 +1713,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 pricing: "Starting from 200 sats (NIP-05, 1 day). Bundle all 3 services for a discount.",
                 tools: vec![ToolInfo {
                     name: "nostaro",
-                    description: "Rust Nostr CLI — post, zap, timeline, and more from the command line. Use your noscha.io NIP-05 identity with nostaro.",
+                    description: "Rust Nostr CLI - post, zap, timeline, and more from the command line. Use your noscha.io NIP-05 identity with nostaro.",
                     github: "https://github.com/kojira/nostaro",
                     install: "cargo install nostaro",
                     examples: vec![
@@ -1724,7 +1724,10 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                     ],
                 }],
             };
-            Response::from_json(&info)
+            let json = serde_json::to_string(&info).map_err(|e| Error::RustError(e.to_string()))?;
+            let headers = Headers::new();
+            let _ = headers.set("Content-Type", "application/json; charset=utf-8");
+            Ok(Response::ok(json)?.with_headers(headers))
         })
         .get("/health", |_, _| {
             let health = HealthResponse { status: "ok", version: VERSION };

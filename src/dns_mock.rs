@@ -48,6 +48,7 @@ pub async fn delete_dns_record(_zone_id: &str, _token: &str, record_id: &str) ->
 }
 
 /// Mock: Update a DNS record's content (logs operation)
+#[allow(dead_code)]
 pub async fn update_dns_record(
     _zone_id: &str,
     _token: &str,

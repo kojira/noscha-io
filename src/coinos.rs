@@ -22,7 +22,9 @@ struct CreateInvoiceRequest {
 #[derive(Debug, Deserialize)]
 pub struct CoinosInvoiceResponse {
     #[serde(default)]
+    #[allow(dead_code)]
     pub id: Option<String>,
+    #[allow(dead_code)]
     pub amount: u64,
     /// bolt11 invoice string
     pub text: String,
