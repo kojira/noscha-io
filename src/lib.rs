@@ -953,7 +953,13 @@ h2{{font-size:1rem;margin-bottom:.75rem;color:var(--text)}}
 .renew-form button:disabled{{opacity:.5;cursor:not-allowed}}
 #renew-status{{margin-top:.75rem;font-size:.85rem;color:var(--muted)}}
 #renew-bolt11{{word-break:break-all;background:var(--bg);padding:.5rem;border-radius:6px;margin-top:.5rem;font-family:monospace;font-size:.75rem}}
+.qr-wrap{{text-align:center;margin:1rem 0}}
+.qr-wrap #renew-qrcode{{display:inline-block;padding:12px;background:#fff;border-radius:8px}}
+.bolt11-box{{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;word-break:break-all;font-size:.75rem;color:var(--muted);cursor:pointer;position:relative;margin-bottom:.5rem;font-family:monospace}}
+.bolt11-box:hover{{border-color:var(--purple)}}
+.bolt11-box::after{{content:'click to copy';position:absolute;right:.5rem;top:.5rem;font-size:.65rem;color:var(--purple)}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -1008,7 +1014,9 @@ async function doRenew(){{
     const r=await fetch('/api/renew',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{management_token:MGMT_TOKEN,plan:plan}})}});
     if(!r.ok){{const t=await r.text();st.textContent='Error: '+t;btn.disabled=false;return;}}
     const d=await r.json();
-    st.innerHTML='<div>Pay this invoice to extend:</div><div id="renew-bolt11">'+d.bolt11+'</div>';
+    st.innerHTML='<div style="margin-bottom:.75rem">Pay this invoice to extend:</div><div class="qr-wrap"><div id="renew-qrcode"></div></div><div class="bolt11-box" id="renew-bolt11-box">'+d.bolt11+'</div>';
+    if(typeof QRCode!=='undefined'){{new QRCode(document.getElementById('renew-qrcode'),{{text:d.bolt11,width:220,height:220,colorDark:'#000',colorLight:'#fff',correctLevel:QRCode.CorrectLevel.L}});}}
+    document.getElementById('renew-bolt11-box').onclick=function(){{navigator.clipboard.writeText(d.bolt11).then(function(){{var el=document.getElementById('renew-bolt11-box');var orig=el.textContent;el.textContent='Copied!';setTimeout(function(){{el.textContent=orig;}},1500);}});}};
     pollOrder(d.order_id);
   }}catch(e){{st.textContent='Error: '+e.message;btn.disabled=false;}}
 }}
