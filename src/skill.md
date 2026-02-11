@@ -54,6 +54,11 @@ A challenge POST is sent to your `webhook_url`:
 {"event": "webhook_challenge", "challenge_url": "https://noscha.io/api/order/{order_id}/confirm/{challenge}", "order_id": "ord_18f3a..."}
 ```
 
+After payment is confirmed, a completion notice is POSTed to your `webhook_url`:
+```json
+{"event": "payment_completed", "order_id": "...", "username": "...", "management_token": "...", "my_page_url": "https://noscha.io/my/mgmt_xxx", "expires_at": "...", "plan": "...", "amount_sats": ..., "is_renewal": false, "services": {"email": true, "subdomain": true, "nip05": true}}
+```
+
 ### Step 2b: Confirm webhook & get invoice
 
 Visit the `challenge_url` from the webhook (GET request):
@@ -91,7 +96,7 @@ GET /api/order/{order_id}/status
 }
 ```
 
-Save the `management_token` — it's needed for renewals and management.
+Alternatively, wait for the `payment_completed` webhook (no polling required). Save the `management_token` — it's needed for renewals and management. The `my_page_url` in the webhook is your management page.
 
 ## Endpoints Reference
 

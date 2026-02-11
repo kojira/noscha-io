@@ -49,6 +49,7 @@
       "post": {
         "operationId": "createOrder",
         "summary": "Create a new rental order with Lightning invoice",
+        "description": "Creates an order and sends webhook_challenge to webhook_url. After payment is confirmed, payment_completed is POSTed with order_id, username, management_token, my_page_url (https://noscha.io/my/{token}), expires_at, plan, amount_sats, is_renewal, services.",
         "requestBody": {
           "required": true,
           "content": {

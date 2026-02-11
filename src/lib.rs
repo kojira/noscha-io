@@ -174,6 +174,79 @@ async fn send_discord_notification(env: &Env, order: &Order) {
     }
 }
 
+/// Send payment_completed webhook to user's webhook_url (best effort)
+#[cfg(target_arch = "wasm32")]
+async fn send_payment_completed_webhook(
+    env: &Env,
+    webhook_url: &str,
+    order: &Order,
+    username: &str,
+    management_token: &str,
+    expires_at: &str,
+    services: &RentalServices,
+    is_renewal: bool,
+) {
+    let domain = env
+        .var("DOMAIN")
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| "noscha.io".to_string());
+    let my_page_url = format!("https://{}/my/{}", domain, management_token);
+
+    let services_json = serde_json::json!({
+        "email": services.email.as_ref().map(|e| e.enabled).unwrap_or(false),
+        "subdomain": services.subdomain.is_some(),
+        "nip05": services.nip05.is_some(),
+    });
+
+    let body = if webhook_url.to_lowercase().contains("discord.com/api/webhooks")
+        || webhook_url.to_lowercase().contains("discordapp.com/api/webhooks")
+    {
+        let plan_key = order.plan.period_key();
+        serde_json::json!({
+            "embeds": [{
+                "title": "⚡ Payment Complete",
+                "description": format!("**{}** — {}", username, plan_key),
+                "url": my_page_url,
+                "color": 0x00ff88,
+                "fields": [
+                    {"name": "👤 Username", "value": username, "inline": true},
+                    {"name": "🗓️ Plan", "value": plan_key, "inline": true},
+                    {"name": "💰 Amount", "value": format!("{} sats", order.amount_sats), "inline": true},
+                    {"name": "🔗 My Page", "value": format!("[Open]({})", my_page_url), "inline": false},
+                    {"name": "📅 Expires", "value": expires_at, "inline": false}
+                ],
+                "footer": {"text": "noscha.io"}
+            }]
+        })
+    } else {
+        serde_json::json!({
+            "event": "payment_completed",
+            "order_id": order.order_id,
+            "username": username,
+            "management_token": management_token,
+            "my_page_url": my_page_url,
+            "expires_at": expires_at,
+            "plan": order.plan.period_key(),
+            "amount_sats": order.amount_sats,
+            "is_renewal": is_renewal,
+            "services": services_json,
+        })
+    };
+
+    let headers = Headers::new();
+    let _ = headers.set("Content-Type", "application/json; charset=utf-8");
+    let req = Request::new_with_init(
+        webhook_url,
+        RequestInit::new()
+            .with_method(Method::Post)
+            .with_headers(headers)
+            .with_body(Some(wasm_bindgen::JsValue::from_str(&body.to_string()))),
+    );
+    if let Ok(r) = req {
+        let _ = Fetch::Request(r).send().await;
+    }
+}
+
 /// Generate a webhook secret for order verification
 #[cfg(target_arch = "wasm32")]
 fn generate_webhook_secret() -> String {
@@ -320,15 +393,30 @@ async fn handle_create_order(
     let is_browser_flow = body.browser_flow == Some(true);
 
     if is_browser_flow {
-        // Browser flow: send plain text (URL only)
+        // Browser flow: Discord expects JSON, others get plain text
+        let webhook_lower = body.webhook_url.to_lowercase();
+        let is_discord = webhook_lower.contains("discord.com/api/webhooks")
+            || webhook_lower.contains("discordapp.com/api/webhooks");
+
+        let (content_type, body_str) = if is_discord {
+            // Wrap URL in angle brackets to suppress Discord link preview (prevents Discord from crawling the URL before the user)
+            let content = format!("<{}>", challenge_url);
+            (
+                "application/json; charset=utf-8",
+                serde_json::json!({ "content": content }).to_string(),
+            )
+        } else {
+            ("text/plain; charset=utf-8", challenge_url.clone())
+        };
+
         let headers = Headers::new();
-        let _ = headers.set("Content-Type", "text/plain; charset=utf-8");
+        let _ = headers.set("Content-Type", content_type);
         let challenge_req = Request::new_with_init(
             &body.webhook_url,
             RequestInit::new()
                 .with_method(Method::Post)
                 .with_headers(headers)
-                .with_body(Some(wasm_bindgen::JsValue::from_str(&challenge_url))),
+                .with_body(Some(wasm_bindgen::JsValue::from_str(&body_str))),
         );
         if let Ok(r) = challenge_req {
             let _ = Fetch::Request(r).send().await;
@@ -368,14 +456,14 @@ async fn handle_create_order(
         management_token: None,
         status: Some(OrderStatus::WebhookPending),
         message: Some("Check your webhook for the challenge URL. Visit it to confirm and get an invoice.".to_string()),
-        challenge_url: if is_browser_flow { Some(challenge_url) } else { None },
+        challenge_url: None,
     })
 }
 
 /// GET /api/order/{order_id}/confirm/{challenge} — webhook verification, then create invoice
 #[cfg(target_arch = "wasm32")]
 async fn handle_confirm_webhook(
-    _req: Request,
+    req: Request,
     ctx: RouteContext<()>,
 ) -> Result<Response> {
     let order_id = ctx.param("order_id").unwrap();
@@ -394,21 +482,51 @@ async fn handle_confirm_webhook(
     let mut order: Order = serde_json::from_str(&text)
         .map_err(|e| Error::RustError(e.to_string()))?;
 
-    // Must be in WebhookPending state
-    if order.status != OrderStatus::WebhookPending {
-        return Response::error("Order is not pending webhook verification", 400);
-    }
-
-    // Verify challenge
+    // Verify challenge (required for all access)
     if order.webhook_challenge.as_deref() != Some(challenge) {
         return Response::error("Invalid challenge token", 403);
     }
 
-    // Check expiry
     let now_ms = js_sys::Date::now();
     let expires_date = js_sys::Date::new(&order.expires_at.clone().into());
     if expires_date.get_time() < now_ms {
         return Response::error("Order expired", 410);
+    }
+
+    // If already Pending, Paid, or Provisioned (revisit/refresh), show the page without creating new invoice
+    if order.status == OrderStatus::Pending && !order.bolt11.is_empty() {
+        return Ok(render_confirm_response(&req, &order, None, None));
+    }
+    if order.status == OrderStatus::Paid {
+        return Ok(render_confirm_response(
+            &req,
+            &order,
+            Some("Payment received. Provisioning in progress..."),
+            None,
+        ));
+    }
+    if order.status == OrderStatus::Provisioned {
+        let domain = ctx
+            .env
+            .var("DOMAIN")
+            .map(|v| v.to_string())
+            .unwrap_or_else(|_| "noscha.io".to_string());
+        let my_page_url = order
+            .management_token
+            .as_ref()
+            .map(|t| format!("https://{}/my/{}", domain, t));
+        let my_page_url_ref = my_page_url.as_deref();
+        return Ok(render_confirm_response(
+            &req,
+            &order,
+            Some("Payment complete! Your services are now active."),
+            my_page_url_ref,
+        ));
+    }
+
+    // Must be WebhookPending for creating invoice
+    if order.status != OrderStatus::WebhookPending {
+        return Response::error("Order is not pending webhook verification", 400);
     }
 
     // Challenge verified! Now create the Lightning invoice
@@ -505,16 +623,224 @@ async fn handle_confirm_webhook(
     let updated_json = serde_json::to_string(&order).map_err(|e| Error::RustError(e.to_string()))?;
     bucket.put(&order_key, updated_json).execute().await?;
 
-    Response::from_json(&OrderResponse {
-        order_id: order.order_id,
-        amount_sats: order.amount_sats,
-        bolt11: order.bolt11,
-        expires_at: order.expires_at,
-        management_token: mgmt_token,
-        status: Some(order.status),
-        message: None,
-        challenge_url: None,
-    })
+    let accept = req
+        .headers()
+        .get("Accept")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "".to_string());
+    let prefers_json = accept.contains("application/json") && !accept.contains("text/html");
+
+    if prefers_json {
+        Response::from_json(&OrderResponse {
+            order_id: order.order_id,
+            amount_sats: order.amount_sats,
+            bolt11: order.bolt11,
+            expires_at: order.expires_at,
+            management_token: mgmt_token,
+            status: Some(order.status),
+            message: None,
+            challenge_url: None,
+        })
+    } else if order.status == OrderStatus::Provisioned {
+        let domain = ctx
+            .env
+            .var("DOMAIN")
+            .map(|v| v.to_string())
+            .unwrap_or_else(|_| "noscha.io".to_string());
+        let my_page_url = order.management_token.as_ref().map(|t| format!("https://{}/my/{}", domain, t));
+        let my_page_url_ref = my_page_url.as_deref();
+        return Ok(render_confirm_response(
+            &req,
+            &order,
+            Some("Payment complete! Your services are now active."),
+            my_page_url_ref,
+        ));
+    } else {
+        let html = render_payment_page(&order.bolt11, order.amount_sats, &order.expires_at, &order.order_id);
+        Response::from_html(html)
+    }
+}
+
+/// Render response for confirm endpoint (HTML or JSON based on Accept)
+#[cfg(target_arch = "wasm32")]
+fn render_confirm_response(
+    req: &Request,
+    order: &Order,
+    success_msg: Option<&str>,
+    my_page_url: Option<&str>,
+) -> Response {
+    let accept = req
+        .headers()
+        .get("Accept")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "".to_string());
+    let prefers_json = accept.contains("application/json") && !accept.contains("text/html");
+
+    if prefers_json {
+        Response::from_json(&OrderResponse {
+            order_id: order.order_id.clone(),
+            amount_sats: order.amount_sats,
+            bolt11: order.bolt11.clone(),
+            expires_at: order.expires_at.clone(),
+            management_token: order.management_token.clone(),
+            status: Some(order.status.clone()),
+            message: success_msg.map(|s| s.to_string()),
+            challenge_url: None,
+        })
+        .expect("OrderResponse serialization")
+    } else if let Some(msg) = success_msg {
+        let mypage_block = my_page_url
+            .map(|u| format!(
+                r#"<p style="margin-bottom:1rem"><a href="{}">Open My Page</a> to manage your services.</p>"#,
+                u.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;").replace('>', "&gt;")
+            ))
+            .unwrap_or_default();
+        let html = format!(
+            r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Payment Complete — noscha.io</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+:root{{--bg:#0a0a0a;--surface:#111;--border:#222;--text:#c0c0c0;--muted:#666;--accent:#00ff88}}
+body{{font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}}
+.section{{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1.5rem;text-align:center}}
+h1{{font-size:1rem;margin-bottom:1rem;color:var(--accent)}}
+a{{color:var(--accent);text-decoration:none}}
+a:hover{{text-decoration:underline}}
+</style>
+</head>
+<body>
+<div class="section">
+<h1>Payment Complete</h1>
+<p style="margin-bottom:1rem">{}</p>
+{}
+<a href="https://noscha.io">Return to noscha.io</a>
+</div>
+</body>
+</html>"#,
+            msg,
+            mypage_block
+        );
+        Response::from_html(html).expect("HTML response")
+    } else {
+        Response::from_html(render_payment_page(
+            &order.bolt11,
+            order.amount_sats,
+            &order.expires_at,
+            &order.order_id,
+        ))
+        .expect("HTML response")
+    }
+}
+
+/// Render HTML payment page with QR code, bolt11, and status polling
+#[cfg(target_arch = "wasm32")]
+fn render_payment_page(bolt11: &str, amount_sats: u64, expires_at: &str, order_id: &str) -> String {
+    let bolt11_escaped = bolt11
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    let order_id_escaped = order_id
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pay with Lightning — noscha.io</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+:root{{--bg:#0a0a0a;--surface:#111;--border:#222;--text:#c0c0c0;--muted:#666;--accent:#00ff88;--orange:#f7931a}}
+body{{font-family:'JetBrains Mono',monospace;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}}
+.container{{max-width:480px;width:100%}}
+.section{{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1.5rem;margin-bottom:1rem}}
+.pay-section{{}}
+.success-section{{display:none}}
+.success-section.show{{display:block}}
+h1{{font-size:1rem;margin-bottom:1rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text)}}
+.qr-wrap{{display:flex;justify-content:center;margin:1rem 0;padding:12px;background:#fff;border-radius:4px}}
+.bolt11-box{{font-size:.75rem;word-break:break-all;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.6rem;margin:.75rem 0;cursor:pointer;color:var(--orange)}}
+.bolt11-box:hover{{border-color:var(--accent)}}
+.amount{{font-size:1.1rem;font-weight:700;color:var(--orange);text-align:center;margin:.5rem 0}}
+.expires{{font-size:.7rem;color:var(--muted);text-align:center;margin-top:.5rem}}
+.poll-status{{font-size:.75rem;color:var(--muted);text-align:center;margin-top:.5rem}}
+a{{color:var(--accent);text-decoration:none}}
+a:hover{{text-decoration:underline}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+<div class="container">
+<div class="section pay-section" id="pay-section">
+<h1>Pay with Lightning</h1>
+<div class="amount">{} sats</div>
+<div class="qr-wrap"><div id="qrcode" data-bolt11="{}"></div></div>
+<div class="bolt11-box" id="bolt11-box" title="Click to copy">{}</div>
+<div class="expires">Invoice expires: {}</div>
+<div class="poll-status" id="poll-status">Checking payment status...</div>
+</div>
+<div class="section success-section" id="success-section">
+<h1>Payment Complete</h1>
+<p style="margin-bottom:1rem">Your services are now active.</p>
+<p style="margin-bottom:1rem"><a href="#" id="mypage-link">Open My Page</a> to manage your services.</p>
+<a href="https://noscha.io">Return to noscha.io</a>
+</div>
+</div>
+<script>
+(function(){{
+  var orderId = "{}";
+  var el = document.getElementById("qrcode");
+  var bolt11 = el.getAttribute("data-bolt11");
+  if (bolt11 && typeof QRCode !== 'undefined') {{
+    new QRCode(el, {{text: bolt11, width: 220, height: 220, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.L}});
+  }}
+  document.getElementById('bolt11-box').onclick = function(){{
+    navigator.clipboard.writeText(bolt11).then(function(){{
+      var box = document.getElementById('bolt11-box');
+      var orig = box.textContent;
+      box.textContent = 'Copied!';
+      setTimeout(function(){{ box.textContent = orig; }}, 1500);
+    }});
+  }};
+  var pollTimer = setInterval(function(){{
+    fetch('/api/order/' + encodeURIComponent(orderId) + '/status')
+      .then(function(r){{ return r.json(); }})
+      .then(function(d){{
+        if (d.status === 'paid' || d.status === 'provisioned') {{
+          clearInterval(pollTimer);
+          document.getElementById('pay-section').style.display = 'none';
+          var successEl = document.getElementById('success-section');
+          successEl.classList.add('show');
+          if (d.management_token) {{
+            var link = document.getElementById('mypage-link');
+            link.href = '/my/' + d.management_token;
+            link.textContent = 'Open My Page: /my/' + d.management_token;
+          }}
+        }}
+      }});
+  }}, 3000);
+}})();
+</script>
+</body>
+</html>"##,
+        amount_sats,
+        bolt11_escaped,
+        bolt11_escaped,
+        expires_at,
+        order_id_escaped
+    )
 }
 
 /// GET /api/order/{order_id}/status
@@ -543,22 +869,6 @@ async fn handle_order_status(
                 order.status
             };
 
-            let challenge_url = if status == OrderStatus::WebhookPending {
-                // Reconstruct challenge_url from order data
-                if let Some(ref ch) = order.webhook_challenge {
-                    let domain = ctx
-                        .env
-                        .var("DOMAIN")
-                        .map(|v| v.to_string())
-                        .unwrap_or_else(|_| "noscha.io".to_string());
-                    Some(format!("https://{}/api/order/{}/confirm/{}", domain, order.order_id, ch))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-
             Response::from_json(&OrderStatusResponse {
                 order_id: order.order_id,
                 management_token: if status == OrderStatus::Provisioned {
@@ -567,7 +877,7 @@ async fn handle_order_status(
                     None
                 },
                 status,
-                challenge_url,
+                challenge_url: None,
             })
         }
         None => Response::error("Order not found", 404),
@@ -722,6 +1032,21 @@ async fn handle_coinos_webhook(
                                     .map_err(|e| Error::RustError(e.to_string()))?;
                                 bucket.put(&key, updated_json).execute().await?;
 
+                                if let (Some(ref url), Some(ref mgmt)) =
+                                    (order.webhook_url.as_deref(), rental.management_token.as_deref())
+                                {
+                                    send_payment_completed_webhook(
+                                        &ctx.env,
+                                        url,
+                                        &order,
+                                        &rental.username,
+                                        mgmt,
+                                        &rental.expires_at,
+                                        &rental.services,
+                                        true,
+                                    )
+                                    .await;
+                                }
                                 send_discord_notification(&ctx.env, &order).await;
                                 return Response::ok("ok");
                             }
@@ -813,6 +1138,22 @@ async fn handle_coinos_webhook(
                         .map_err(|e| Error::RustError(e.to_string()))?;
                     bucket.put(&key, updated_json).execute().await?;
 
+                    if let (Some(ref url), Some(ref mgmt)) = (
+                        order.webhook_url.as_deref(),
+                        rental.management_token.as_deref(),
+                    ) {
+                        send_payment_completed_webhook(
+                            &ctx.env,
+                            url,
+                            &order,
+                            &rental.username,
+                            mgmt,
+                            &rental.expires_at,
+                            &rental.services,
+                            false,
+                        )
+                        .await;
+                    }
                     send_discord_notification(&ctx.env, &order).await;
                     return Response::ok("ok");
                 }
@@ -959,6 +1300,23 @@ async fn handle_renew(
         let updated_json = serde_json::to_string(&order)
             .map_err(|e| Error::RustError(e.to_string()))?;
         bucket.put(&order_key, updated_json).execute().await?;
+
+        if let (Some(ref url), Some(ref mgmt)) = (
+            order.webhook_url.as_deref(),
+            updated_rental.management_token.as_deref(),
+        ) {
+            send_payment_completed_webhook(
+                &ctx.env,
+                url,
+                &order,
+                &updated_rental.username,
+                mgmt,
+                &updated_rental.expires_at,
+                &updated_rental.services,
+                true,
+            )
+            .await;
+        }
     }
 
     Response::from_json(&RenewResponse {
@@ -1476,6 +1834,11 @@ A challenge POST is sent to your `webhook_url`:
 {"event": "webhook_challenge", "challenge_url": "https://noscha.io/api/order/{order_id}/confirm/{challenge}", "order_id": "ord_18f3a..."}
 ```
 
+After payment is confirmed, a completion notice is POSTed to your `webhook_url`:
+```json
+{"event": "payment_completed", "order_id": "...", "username": "...", "management_token": "...", "my_page_url": "https://noscha.io/my/mgmt_xxx", "expires_at": "...", "plan": "...", "amount_sats": ..., "is_renewal": false, "services": {"email": true, "subdomain": true, "nip05": true}}
+```
+
 ### Step 2b: Confirm webhook & get invoice
 
 Visit the `challenge_url` from the webhook (GET request):
@@ -1513,7 +1876,7 @@ GET /api/order/{order_id}/status
 }
 ```
 
-Save the `management_token` - it's needed for renewals and management.
+Alternatively, wait for the `payment_completed` webhook (no polling required). Save the `management_token` - it's needed for renewals and management. The `my_page_url` in the webhook is your management page.
 
 ## Endpoints Reference
 

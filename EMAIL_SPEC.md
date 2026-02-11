@@ -40,6 +40,10 @@
 - 送信元: `username@noscha.io`（Resend API経由）
 - レート制限: **5通/24h per user**
 
+### 支払い完了 (payment_completed)
+- 支払い検知・プロビジョニング完了時に `webhook_url` へ POST
+- ペイロード: `event`, `order_id`, `username`, `management_token`, `my_page_url`, `expires_at`, `plan`, `amount_sats`, `is_renewal`, `services`
+
 ### 非対応（廃止済み）
 - `forward_to`（メール転送）: 2026-02-12に廃止。Resend APIの送信枠を消費するため
 

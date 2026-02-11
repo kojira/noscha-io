@@ -11,6 +11,7 @@ Lightning-powered disposable identity services for Nostr. Rent a username and ge
 - **Flexible Plans** — 1 hour to 1 year rentals
 - **Admin Dashboard** — NIP-07 authenticated admin panel
 - **Auto-cleanup** — Expired rentals and DNS records cleaned up automatically
+- **Webhooks** — Order challenge, payment completion, and email notifications sent to your webhook URL; includes my_page URL and management token
 
 ## Tech Stack
 

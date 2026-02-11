@@ -525,16 +525,12 @@ input:focus{border-color:var(--accent)}
     qrEl.innerHTML = '';
 
     if(order.status === 'webhook_pending'){
-      // No QR, no bolt11
+      // No QR, no bolt11 - link is sent to webhook only
       bolt11Box.style.display = 'none';
       payBadge.textContent = 'webhook pending';
       payBadge.className = 'status-badge status-pending';
       payAmount.textContent = order.amount_sats + ' sats';
-      if(order.challenge_url){
-        pollInfo.innerHTML = 'Click the link below to confirm your order and get an invoice:<br><a href="' + order.challenge_url + '" target="_blank" style="color:#8b5cf6;font-weight:600">' + order.challenge_url + '</a>';
-      } else {
-        pollInfo.textContent = 'A challenge URL has been sent to your webhook. Please confirm it.';
-      }
+      pollInfo.innerHTML = 'Open the link sent to your webhook to get the invoice and complete payment.<br><span style="font-size:.75rem;color:var(--muted);margin-top:.5rem;display:block">If you did not receive it, your webhook URL may be incorrect. Please verify the URL and try again.</span>';
     } else {
       // Normal flow: bolt11 exists
       bolt11Box.style.display = 'block';
@@ -576,10 +572,7 @@ input:focus{border-color:var(--accent)}
             pollInfo.textContent = '';
             showSuccess(username);
           } else if(d.status === 'webhook_pending'){
-            // Update challenge_url if it appeared
-            if(d.challenge_url){
-              pollInfo.innerHTML = 'Click the link below to confirm your order and get an invoice:<br><a href="' + d.challenge_url + '" target="_blank" style="color:#8b5cf6;font-weight:600">' + d.challenge_url + '</a>';
-            }
+            // Keep same message - challenge_url is not returned (webhook only)
           } else if(d.status === 'pending' && d.bolt11){
             // Transitioned from webhook_pending to pending: show QR and bolt11
             var qrEl = document.getElementById('qrcode');
