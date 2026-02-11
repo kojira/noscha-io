@@ -12,6 +12,8 @@ mod coinos;
 mod coinos_mock;
 #[cfg(target_arch = "wasm32")]
 mod dns_mock;
+#[cfg(target_arch = "wasm32")]
+pub mod resend;
 
 #[cfg(target_arch = "wasm32")]
 use serde::Serialize;
@@ -46,6 +48,40 @@ struct ServiceInfo {
 #[derive(Serialize)]
 struct HealthResponse {
     status: &'static str,
+}
+
+/// Extract ServiceType list from OrderServicesRequest
+#[cfg(target_arch = "wasm32")]
+fn services_from_request(services: &Option<OrderServicesRequest>) -> Vec<types::ServiceType> {
+    let mut result = Vec::new();
+    if let Some(ref svc) = services {
+        if svc.subdomain.is_some() {
+            result.push(types::ServiceType::Subdomain);
+        }
+        if svc.email.is_some() {
+            result.push(types::ServiceType::EmailForwarding);
+        }
+        if svc.nip05.is_some() {
+            result.push(types::ServiceType::Nip05);
+        }
+    }
+    result
+}
+
+/// Extract ServiceType list from an existing Rental's services
+#[cfg(target_arch = "wasm32")]
+fn services_from_rental(services: &RentalServices) -> Vec<types::ServiceType> {
+    let mut result = Vec::new();
+    if services.subdomain.as_ref().map_or(false, |s| s.enabled) {
+        result.push(types::ServiceType::Subdomain);
+    }
+    if services.email.as_ref().map_or(false, |s| s.enabled) {
+        result.push(types::ServiceType::EmailForwarding);
+    }
+    if services.nip05.as_ref().map_or(false, |s| s.enabled) {
+        result.push(types::ServiceType::Nip05);
+    }
+    result
 }
 
 /// Generate a simple order ID using timestamp
@@ -140,7 +176,8 @@ async fn handle_create_order(
     }
 
     let order_id = generate_order_id();
-    let amount_sats = body.plan.amount_sats();
+    let service_types = services_from_request(&body.services);
+    let amount_sats = Plan::calculate_total(&body.plan, &service_types);
     let webhook_secret = generate_webhook_secret();
     let domain = ctx
         .env
@@ -610,8 +647,15 @@ async fn handle_renew(
         None => return Response::error("Rental not found", 404),
     };
 
+    // Determine services for pricing: use request services if provided, else derive from rental
+    let service_types = if body.services.is_some() {
+        services_from_request(&body.services)
+    } else {
+        services_from_rental(&rental.services)
+    };
+
     let order_id = generate_order_id();
-    let amount_sats = body.plan.amount_sats();
+    let amount_sats = Plan::calculate_total(&body.plan, &service_types);
     let webhook_secret = generate_webhook_secret();
     let domain = ctx
         .env
@@ -857,11 +901,11 @@ h2{{font-size:1rem;margin-bottom:.75rem;color:var(--text)}}
 </div>
 <div class="renew-form" id="renew-form">
 <select id="renew-plan">
-<option value="1d">1 Day — 10 sats</option>
-<option value="7d">7 Days — 50 sats</option>
-<option value="30d" selected>30 Days — 150 sats</option>
-<option value="90d">90 Days — 350 sats</option>
-<option value="365d">365 Days — 800 sats</option>
+<option value="1d">1 Day (price varies by services)</option>
+<option value="7d">7 Days (price varies by services)</option>
+<option value="30d" selected>30 Days (price varies by services)</option>
+<option value="90d">90 Days (price varies by services)</option>
+<option value="365d">365 Days (price varies by services)</option>
 </select>
 <button id="renew-btn" onclick="doRenew()">Extend</button>
 </div>
@@ -1010,7 +1054,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                     "Lightning Network instant payments",
                     "1-day to 1-year rentals",
                 ],
-                pricing: "Starting from 10 sats/day",
+                pricing: "Starting from 200 sats (NIP-05, 1 day). Bundle all 3 services for a discount.",
             };
             Response::from_json(&info)
         })

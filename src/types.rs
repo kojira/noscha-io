@@ -1,4 +1,13 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+/// Service types that can be individually selected
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ServiceType {
+    Subdomain,
+    EmailForwarding,
+    Nip05,
+}
 
 /// Supported rental plans with pricing in sats
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -16,13 +25,45 @@ pub enum Plan {
 }
 
 impl Plan {
-    pub fn amount_sats(&self) -> u64 {
+    /// Price for a single service type
+    pub fn service_price(&self, service: &ServiceType) -> u64 {
+        match (self, service) {
+            (Plan::OneDay, ServiceType::Subdomain) => 500,
+            (Plan::OneDay, ServiceType::EmailForwarding) => 1500,
+            (Plan::OneDay, ServiceType::Nip05) => 200,
+            (Plan::SevenDays, ServiceType::Subdomain) => 1000,
+            (Plan::SevenDays, ServiceType::EmailForwarding) => 2500,
+            (Plan::SevenDays, ServiceType::Nip05) => 500,
+            (Plan::ThirtyDays, ServiceType::Subdomain) => 2000,
+            (Plan::ThirtyDays, ServiceType::EmailForwarding) => 5000,
+            (Plan::ThirtyDays, ServiceType::Nip05) => 1000,
+            (Plan::NinetyDays, ServiceType::Subdomain) => 5000,
+            (Plan::NinetyDays, ServiceType::EmailForwarding) => 12000,
+            (Plan::NinetyDays, ServiceType::Nip05) => 2500,
+            (Plan::OneYear, ServiceType::Subdomain) => 15000,
+            (Plan::OneYear, ServiceType::EmailForwarding) => 40000,
+            (Plan::OneYear, ServiceType::Nip05) => 8000,
+        }
+    }
+
+    /// Bundle price when all 3 services are selected
+    pub fn bundle_price(&self) -> u64 {
         match self {
-            Plan::OneDay => 10,
-            Plan::SevenDays => 50,
-            Plan::ThirtyDays => 150,
-            Plan::NinetyDays => 350,
-            Plan::OneYear => 800,
+            Plan::OneDay => 1800,
+            Plan::SevenDays => 3300,
+            Plan::ThirtyDays => 6500,
+            Plan::NinetyDays => 16000,
+            Plan::OneYear => 50000,
+        }
+    }
+
+    /// Calculate total price based on selected services
+    pub fn calculate_total(plan: &Plan, services: &[ServiceType]) -> u64 {
+        let unique: HashSet<&ServiceType> = services.iter().collect();
+        if unique.len() == 3 {
+            plan.bundle_price()
+        } else {
+            unique.iter().map(|s| plan.service_price(s)).sum()
         }
     }
 
@@ -203,6 +244,8 @@ pub struct Rental {
 pub struct RenewRequest {
     pub management_token: String,
     pub plan: Plan,
+    #[serde(default)]
+    pub services: Option<OrderServicesRequest>,
 }
 
 /// POST /api/renew response
@@ -234,12 +277,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_plan_amount_sats() {
-        assert_eq!(Plan::OneDay.amount_sats(), 10);
-        assert_eq!(Plan::SevenDays.amount_sats(), 50);
-        assert_eq!(Plan::ThirtyDays.amount_sats(), 150);
-        assert_eq!(Plan::NinetyDays.amount_sats(), 350);
-        assert_eq!(Plan::OneYear.amount_sats(), 800);
+    fn test_service_price() {
+        assert_eq!(Plan::OneDay.service_price(&ServiceType::Subdomain), 500);
+        assert_eq!(Plan::OneDay.service_price(&ServiceType::EmailForwarding), 1500);
+        assert_eq!(Plan::OneDay.service_price(&ServiceType::Nip05), 200);
+        assert_eq!(Plan::ThirtyDays.service_price(&ServiceType::Subdomain), 2000);
+        assert_eq!(Plan::ThirtyDays.service_price(&ServiceType::EmailForwarding), 5000);
+        assert_eq!(Plan::ThirtyDays.service_price(&ServiceType::Nip05), 1000);
+        assert_eq!(Plan::OneYear.service_price(&ServiceType::Subdomain), 15000);
+        assert_eq!(Plan::OneYear.service_price(&ServiceType::EmailForwarding), 40000);
+        assert_eq!(Plan::OneYear.service_price(&ServiceType::Nip05), 8000);
+    }
+
+    #[test]
+    fn test_bundle_price() {
+        assert_eq!(Plan::OneDay.bundle_price(), 1800);
+        assert_eq!(Plan::SevenDays.bundle_price(), 3300);
+        assert_eq!(Plan::ThirtyDays.bundle_price(), 6500);
+        assert_eq!(Plan::NinetyDays.bundle_price(), 16000);
+        assert_eq!(Plan::OneYear.bundle_price(), 50000);
+    }
+
+    #[test]
+    fn test_calculate_total_single_service() {
+        let services = vec![ServiceType::Subdomain];
+        assert_eq!(Plan::calculate_total(&Plan::ThirtyDays, &services), 2000);
+    }
+
+    #[test]
+    fn test_calculate_total_two_services() {
+        let services = vec![ServiceType::Subdomain, ServiceType::Nip05];
+        assert_eq!(Plan::calculate_total(&Plan::ThirtyDays, &services), 3000);
+    }
+
+    #[test]
+    fn test_calculate_total_bundle() {
+        let services = vec![ServiceType::Subdomain, ServiceType::EmailForwarding, ServiceType::Nip05];
+        assert_eq!(Plan::calculate_total(&Plan::ThirtyDays, &services), 6500);
+        // Bundle price (6500) < sum of individual (2000+5000+1000=8000)
     }
 
     #[test]

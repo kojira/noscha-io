@@ -126,15 +126,16 @@ input:focus{border-color:var(--purple)}
     </div>
 
     <div class="section">
-      <h2>Pricing</h2>
+      <h2>Pricing (per service)</h2>
       <table class="pricing-table">
-        <tr><th>Duration</th><th>Price</th><th>Per day</th></tr>
-        <tr><td>1 day</td><td class="price">10 sats</td><td class="price">10 sats</td></tr>
-        <tr><td>1 week</td><td class="price">50 sats</td><td class="price">~7 sats</td></tr>
-        <tr><td>1 month</td><td class="price">150 sats</td><td class="price">5 sats</td></tr>
-        <tr><td>3 months</td><td class="price">350 sats</td><td class="price">~4 sats</td></tr>
-        <tr><td>1 year</td><td class="price">800 sats</td><td class="price">~2 sats</td></tr>
+        <tr><th>Duration</th><th>Subdomain</th><th>Email</th><th>NIP-05</th><th style="color:var(--green)">All-in Bundle</th></tr>
+        <tr><td>1 day</td><td class="price">500</td><td class="price">1,500</td><td class="price">200</td><td class="price" style="color:var(--green)">1,800</td></tr>
+        <tr><td>1 week</td><td class="price">1,000</td><td class="price">2,500</td><td class="price">500</td><td class="price" style="color:var(--green)">3,300</td></tr>
+        <tr><td>1 month</td><td class="price">2,000</td><td class="price">5,000</td><td class="price">1,000</td><td class="price" style="color:var(--green)">6,500</td></tr>
+        <tr><td>3 months</td><td class="price">5,000</td><td class="price">12,000</td><td class="price">2,500</td><td class="price" style="color:var(--green)">16,000</td></tr>
+        <tr><td>1 year</td><td class="price">15,000</td><td class="price">40,000</td><td class="price">8,000</td><td class="price" style="color:var(--green)">50,000</td></tr>
       </table>
+      <p style="font-size:.75rem;color:var(--muted);margin-top:.5rem">* All prices in sats. Select all 3 services for the bundle discount.</p>
     </div>
 
     <!-- Order Form -->
@@ -150,11 +151,11 @@ input:focus{border-color:var(--purple)}
       <div class="field">
         <label>Plan</label>
         <div class="plans">
-          <div class="plan-opt"><input type="radio" name="plan" id="p1d" value="1d"><label for="p1d"><span class="dur">1 day</span><span class="sat">10 sats</span></label></div>
-          <div class="plan-opt"><input type="radio" name="plan" id="p7d" value="7d" checked><label for="p7d"><span class="dur">1 week</span><span class="sat">50 sats</span></label></div>
-          <div class="plan-opt"><input type="radio" name="plan" id="p30d" value="30d"><label for="p30d"><span class="dur">1 month</span><span class="sat">150 sats</span></label></div>
-          <div class="plan-opt"><input type="radio" name="plan" id="p90d" value="90d"><label for="p90d"><span class="dur">3 months</span><span class="sat">350 sats</span></label></div>
-          <div class="plan-opt"><input type="radio" name="plan" id="p365d" value="365d"><label for="p365d"><span class="dur">1 year</span><span class="sat">800 sats</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p1d" value="1d"><label for="p1d"><span class="dur">1 day</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p7d" value="7d" checked><label for="p7d"><span class="dur">1 week</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p30d" value="30d"><label for="p30d"><span class="dur">1 month</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p90d" value="90d"><label for="p90d"><span class="dur">3 months</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p365d" value="365d"><label for="p365d"><span class="dur">1 year</span></label></div>
         </div>
       </div>
 
@@ -192,6 +193,12 @@ input:focus{border-color:var(--purple)}
             <input type="text" id="nip05-pubkey" placeholder="npub hex pubkey (64 chars)">
           </div>
         </div>
+      </div>
+
+      <div id="total-display" style="text-align:center;padding:.75rem;margin-bottom:1rem;border:1px solid var(--border);border-radius:8px;background:var(--bg);display:none">
+        <span style="color:var(--muted);font-size:.85rem">Total: </span>
+        <span id="total-sats" style="font-size:1.2rem;font-weight:700;color:var(--orange)">0 sats</span>
+        <div id="bundle-badge" style="display:none;margin-top:.25rem;font-size:.75rem;font-weight:600;color:var(--green)">All-in bundle discount applied!</div>
       </div>
 
       <button class="btn btn-primary" id="order-btn" disabled>Pay with Lightning</button>
@@ -254,13 +261,47 @@ input:focus{border-color:var(--purple)}
   var currentOrderId = null;
   var currentManagementToken = null;
 
+  // Pricing tables
+  var PRICES = {
+    '1d':   {subdomain:500, email:1500, nip05:200, bundle:1800},
+    '7d':   {subdomain:1000, email:2500, nip05:500, bundle:3300},
+    '30d':  {subdomain:2000, email:5000, nip05:1000, bundle:6500},
+    '90d':  {subdomain:5000, email:12000, nip05:2500, bundle:16000},
+    '365d': {subdomain:15000, email:40000, nip05:8000, bundle:50000},
+  };
+
+  function calcTotal(){
+    var plan = document.querySelector('input[name=plan]:checked').value;
+    var p = PRICES[plan];
+    var hasEmail = document.getElementById('svc-email').checked;
+    var hasSub = document.getElementById('svc-subdomain').checked;
+    var hasNip = document.getElementById('svc-nip05').checked;
+    var count = (hasEmail?1:0)+(hasSub?1:0)+(hasNip?1:0);
+    var totalEl = document.getElementById('total-display');
+    var satsEl = document.getElementById('total-sats');
+    var bundleEl = document.getElementById('bundle-badge');
+    if(count===0){totalEl.style.display='none';return 0;}
+    totalEl.style.display='block';
+    var total;
+    if(count===3){total=p.bundle;bundleEl.style.display='block';}
+    else{total=(hasEmail?p.email:0)+(hasSub?p.subdomain:0)+(hasNip?p.nip05:0);bundleEl.style.display='none';}
+    satsEl.textContent=total.toLocaleString()+' sats';
+    return total;
+  }
+
   // Service toggle wiring
   ['email','subdomain','nip05'].forEach(function(s){
     var cb = document.getElementById('svc-'+s);
     var fields = document.getElementById('svc-'+s+'-fields');
     cb.addEventListener('change', function(){
       fields.classList.toggle('open', cb.checked);
+      calcTotal();
     });
+  });
+
+  // Recalculate on plan change
+  document.querySelectorAll('input[name=plan]').forEach(function(r){
+    r.addEventListener('change', calcTotal);
   });
 
   // Username validation with debounce
@@ -303,7 +344,7 @@ input:focus{border-color:var(--purple)}
 
   // Re-evaluate button on service toggle
   document.querySelectorAll('.svc-toggle input').forEach(function(cb){
-    cb.addEventListener('change', updateOrderBtn);
+    cb.addEventListener('change', function(){ updateOrderBtn(); calcTotal(); });
   });
 
   // Order submission
