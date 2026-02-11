@@ -1,5 +1,6 @@
 pub mod dns;
 pub mod email;
+pub mod nip05;
 pub mod types;
 pub mod validation;
 
@@ -17,6 +18,8 @@ use worker::*;
 
 #[cfg(target_arch = "wasm32")]
 use dns::DnsRecordType;
+#[cfg(target_arch = "wasm32")]
+use nip05::{handle_nip05, handle_nip05_options};
 #[cfg(target_arch = "wasm32")]
 use types::*;
 #[cfg(target_arch = "wasm32")]
@@ -512,6 +515,8 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/order", handle_create_order)
         .get_async("/api/order/:order_id/status", handle_order_status)
         .post_async("/api/webhook/coinos", handle_coinos_webhook)
+        .get_async("/.well-known/nostr.json", handle_nip05)
+        .options_async("/.well-known/nostr.json", handle_nip05_options)
         .run(req, env)
         .await
 }
