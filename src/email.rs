@@ -170,6 +170,7 @@ mod tests {
                 subdomain: None,
                 nip05: None,
             },
+            management_token: None,
         }
     }
 
@@ -213,6 +214,7 @@ mod tests {
                 subdomain: None,
                 nip05: None,
             },
+            management_token: None,
         };
         assert_eq!(lookup_forward_address(&rental), None);
     }

@@ -188,11 +188,101 @@ async fn handle_create_order(
         serde_json::to_string(&order).map_err(|e| Error::RustError(e.to_string()))?;
     bucket.put(&order_key, order_json).execute().await?;
 
+    // Capture response fields before potential move
+    let resp_order_id = order.order_id.clone();
+    let resp_amount_sats = order.amount_sats;
+    let resp_bolt11 = order.bolt11.clone();
+    let resp_expires_at = order.expires_at.clone();
+
+    // In mock mode, provision immediately (webhook won't be called)
+    let mut mgmt_token: Option<String> = None;
+    if is_mock {
+        let now_ms = js_sys::Date::now();
+        let duration_ms = order.plan.duration_days() as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
+        let rental_expires_ms = now_ms + duration_ms;
+        let rental_expires_date = js_sys::Date::new(&(rental_expires_ms.into()));
+        let rental_expires_at = rental_expires_date
+            .to_iso_string()
+            .as_string()
+            .unwrap_or_default();
+        let now_date = js_sys::Date::new_0();
+        let now_iso = now_date
+            .to_iso_string()
+            .as_string()
+            .unwrap_or_default();
+
+        // Provision DNS if subdomain requested
+        let mut subdomain_service: Option<SubdomainService> = None;
+        if let Some(ref services) = order.services_requested {
+            if let Some(ref sub_req) = services.subdomain {
+                let record_id = provision_dns(
+                    &ctx.env,
+                    &order.username,
+                    sub_req,
+                    &rental_expires_at,
+                )
+                .await?;
+                subdomain_service = Some(SubdomainService {
+                    enabled: true,
+                    record_type: sub_req.record_type.clone(),
+                    target: sub_req.target.clone(),
+                    proxied: sub_req.proxied,
+                    cf_record_id: record_id,
+                });
+            }
+        }
+
+        let email_service = order.services_requested.as_ref().and_then(|s| {
+            s.email.as_ref().map(|e| EmailService {
+                enabled: true,
+                forward_to: e.forward_to.clone(),
+                cf_rule_id: None,
+            })
+        });
+        let nip05_service = order.services_requested.as_ref().and_then(|s| {
+            s.nip05.as_ref().map(|n| Nip05Service {
+                enabled: true,
+                pubkey_hex: n.pubkey.clone(),
+                relays: vec![],
+            })
+        });
+
+        let token = format!("mgmt_{:x}", js_sys::Date::now() as u64);
+        mgmt_token = Some(token.clone());
+
+        let rental = Rental {
+            username: order.username.clone(),
+            status: "active".to_string(),
+            created_at: now_iso,
+            expires_at: rental_expires_at,
+            plan: order.plan.clone(),
+            services: RentalServices {
+                email: email_service,
+                subdomain: subdomain_service,
+                nip05: nip05_service,
+            },
+            management_token: Some(token),
+        };
+
+        let rental_key = format!("rentals/{}.json", order.username);
+        let rental_json = serde_json::to_string(&rental)
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        bucket.put(&rental_key, rental_json).execute().await?;
+
+        // Update order to Provisioned
+        let mut order = order;
+        order.status = OrderStatus::Provisioned;
+        let updated_json = serde_json::to_string(&order)
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        bucket.put(&order_key, updated_json).execute().await?;
+    }
+
     Response::from_json(&OrderResponse {
-        order_id: order.order_id,
-        amount_sats: order.amount_sats,
-        bolt11: order.bolt11,
-        expires_at: order.expires_at,
+        order_id: resp_order_id,
+        amount_sats: resp_amount_sats,
+        bolt11: resp_bolt11,
+        expires_at: resp_expires_at,
+        management_token: mgmt_token,
     })
 }
 
@@ -215,9 +305,16 @@ async fn handle_order_status(
             let order: Order = serde_json::from_str(&text)
                 .map_err(|e| Error::RustError(e.to_string()))?;
 
+            let is_mock = coinos_mock::is_mock_enabled(&ctx.env);
+            let status = if is_mock && (order.status == OrderStatus::Paid || order.status == OrderStatus::Provisioned) {
+                OrderStatus::Provisioned
+            } else {
+                order.status
+            };
+
             Response::from_json(&OrderStatusResponse {
                 order_id: order.order_id,
-                status: order.status,
+                status,
             })
         }
         None => Response::error("Order not found", 404),
@@ -401,6 +498,7 @@ async fn handle_coinos_webhook(
                             subdomain: subdomain_service,
                             nip05: nip05_service,
                         },
+                        management_token: Some(format!("mgmt_{:x}", js_sys::Date::now() as u64)),
                     };
 
                     // Save rental to R2
@@ -426,6 +524,157 @@ async fn handle_coinos_webhook(
     }
 
     Response::ok("no matching order")
+}
+
+/// GET /my/{management_token} — user my-page
+#[cfg(target_arch = "wasm32")]
+async fn handle_my_page(
+    _req: Request,
+    ctx: RouteContext<()>,
+) -> Result<Response> {
+    let token = ctx.param("token").unwrap();
+    let bucket = ctx.env.bucket("BUCKET")?;
+
+    // Scan rentals to find matching management_token
+    let list = bucket.list().prefix("rentals/").execute().await?;
+    for obj_entry in list.objects() {
+        let key = obj_entry.key();
+        if let Some(obj) = bucket.get(&key).execute().await? {
+            let body = obj.body().unwrap();
+            let text = body.text().await?;
+            if let Ok(rental) = serde_json::from_str::<Rental>(&text) {
+                if rental.management_token.as_deref() == Some(token) {
+                    return Response::from_html(render_my_page(&rental, &ctx.env));
+                }
+            }
+        }
+    }
+
+    Response::error("Not found", 404)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn render_my_page(rental: &Rental, env: &Env) -> String {
+    let domain = env
+        .var("DOMAIN")
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| "noscha.io".to_string());
+
+    // Calculate days remaining
+    let now_ms = js_sys::Date::now();
+    let expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
+    let expires_ms = expires_date.get_time();
+    let days_remaining = ((expires_ms - now_ms) / (24.0 * 60.0 * 60.0 * 1000.0)).ceil() as i64;
+    let days_remaining = if days_remaining < 0 { 0 } else { days_remaining };
+
+    let status_color = if rental.status == "active" && days_remaining > 0 {
+        "#22c55e"
+    } else {
+        "#ef4444"
+    };
+    let display_status = if rental.status == "active" && days_remaining > 0 {
+        "Active"
+    } else {
+        "Expired"
+    };
+
+    // Build services list
+    let mut services_html = String::new();
+    if let Some(ref email) = rental.services.email {
+        if email.enabled {
+            services_html.push_str(&format!(
+                "<div class='svc'><span class='svc-badge email'>Email</span> {}@{} &rarr; {}</div>",
+                rental.username, domain, email.forward_to
+            ));
+        }
+    }
+    if let Some(ref sub) = rental.services.subdomain {
+        if sub.enabled {
+            services_html.push_str(&format!(
+                "<div class='svc'><span class='svc-badge dns'>DNS</span> {}.{} &rarr; {} ({}{})</div>",
+                rental.username, domain, sub.target, sub.record_type,
+                if sub.proxied { ", proxied" } else { "" }
+            ));
+        }
+    }
+    if let Some(ref nip) = rental.services.nip05 {
+        if nip.enabled {
+            services_html.push_str(&format!(
+                "<div class='svc'><span class='svc-badge nip'>NIP-05</span> {}@{} &rarr; {}...{}</div>",
+                rental.username, domain,
+                &nip.pubkey_hex[..8.min(nip.pubkey_hex.len())],
+                &nip.pubkey_hex[nip.pubkey_hex.len().saturating_sub(8)..]
+            ));
+        }
+    }
+    if services_html.is_empty() {
+        services_html = "<div class='svc' style='color:#888'>No services configured</div>".to_string();
+    }
+
+    let plan_label = match rental.plan {
+        Plan::OneDay => "1 Day",
+        Plan::SevenDays => "7 Days",
+        Plan::ThirtyDays => "30 Days",
+        Plan::NinetyDays => "90 Days",
+        Plan::OneYear => "365 Days",
+    };
+
+    format!(r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>noscha.io — My Rental</title>
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+:root{{--bg:#0d0d0d;--surface:#1a1a1a;--border:#2a2a2a;--text:#e0e0e0;--muted:#888;--purple:#8b5cf6;--orange:#f97316;--green:#22c55e;--red:#ef4444}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh;display:flex;justify-content:center;padding:2rem 1rem}}
+.wrap{{max-width:560px;width:100%}}
+.logo{{font-size:1.5rem;font-weight:700;margin-bottom:1.5rem}}
+.logo span:first-child{{color:var(--purple)}}
+.logo span:nth-child(2){{color:var(--orange)}}
+.logo span:last-child{{color:var(--muted);font-size:.9rem;font-weight:400;margin-left:.5rem}}
+.card{{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1rem}}
+.row{{display:flex;justify-content:space-between;align-items:center;padding:.4rem 0}}
+.row .label{{color:var(--muted);font-size:.85rem}}
+.row .val{{font-weight:600}}
+.badge{{display:inline-block;padding:.15rem .6rem;border-radius:9999px;font-size:.75rem;font-weight:600}}
+.svc{{padding:.5rem 0;border-bottom:1px solid var(--border);font-size:.85rem}}
+.svc:last-child{{border-bottom:none}}
+.svc-badge{{display:inline-block;padding:.1rem .5rem;border-radius:4px;font-size:.7rem;font-weight:600;margin-right:.4rem}}
+.svc-badge.email{{background:#6d28d9;color:#fff}}
+.svc-badge.dns{{background:#c2410c;color:#fff}}
+.svc-badge.nip{{background:#0e7490;color:#fff}}
+h2{{font-size:1rem;margin-bottom:.75rem;color:var(--text)}}
+.extend-link{{display:inline-block;margin-top:1rem;color:var(--purple);font-size:.85rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="logo"><span>noscha</span><span>.io</span><span>my rental</span></div>
+<div class="card">
+<div class="row"><span class="label">Username</span><span class="val">{username}</span></div>
+<div class="row"><span class="label">Plan</span><span class="val">{plan}</span></div>
+<div class="row"><span class="label">Status</span><span class="badge" style="background:{status_color};color:#fff">{status}</span></div>
+<div class="row"><span class="label">Expires</span><span class="val">{expires}</span></div>
+<div class="row"><span class="label">Days remaining</span><span class="val">{days}</span></div>
+</div>
+<div class="card">
+<h2>Active Services</h2>
+{services}
+</div>
+<a class="extend-link" href="/">&#8592; Extend or renew your rental</a>
+</div>
+</body>
+</html>"#,
+        username = rental.username,
+        plan = plan_label,
+        status_color = status_color,
+        status = display_status,
+        expires = &rental.expires_at[..10.min(rental.expires_at.len())],
+        days = days_remaining,
+        services = services_html,
+    )
 }
 
 /// Cleanup expired DNS records by scanning R2 rentals
@@ -541,6 +790,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/order", handle_create_order)
         .get_async("/api/order/:order_id/status", handle_order_status)
         .post_async("/api/webhook/coinos", handle_coinos_webhook)
+        .get_async("/my/:token", handle_my_page)
         .get_async("/.well-known/nostr.json", handle_nip05)
         .options_async("/.well-known/nostr.json", handle_nip05_options)
         // Admin routes

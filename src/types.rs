@@ -115,6 +115,8 @@ pub struct OrderResponse {
     pub amount_sats: u64,
     pub bolt11: String,
     pub expires_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub management_token: Option<String>,
 }
 
 /// GET /api/check/{username} response
@@ -184,6 +186,8 @@ pub struct Rental {
     pub expires_at: String,
     pub plan: Plan,
     pub services: RentalServices,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub management_token: Option<String>,
 }
 
 /// Coinos webhook payload
