@@ -1,3 +1,4 @@
+pub mod dns;
 pub mod types;
 pub mod validation;
 
@@ -5,12 +6,16 @@ pub mod validation;
 mod coinos;
 #[cfg(target_arch = "wasm32")]
 mod coinos_mock;
+#[cfg(target_arch = "wasm32")]
+mod dns_mock;
 
 #[cfg(target_arch = "wasm32")]
 use serde::Serialize;
 #[cfg(target_arch = "wasm32")]
 use worker::*;
 
+#[cfg(target_arch = "wasm32")]
+use dns::DnsRecordType;
 #[cfg(target_arch = "wasm32")]
 use types::*;
 #[cfg(target_arch = "wasm32")]
@@ -138,6 +143,7 @@ async fn handle_create_order(
         expires_at: expires_at.to_iso_string().as_string().unwrap_or_default(),
         coinos_invoice_hash: invoice.hash,
         webhook_secret: Some(webhook_secret),
+        services_requested: body.services,
     };
 
     // Save order to R2
@@ -182,6 +188,72 @@ async fn handle_order_status(
     }
 }
 
+/// Provision DNS for a subdomain order
+#[cfg(target_arch = "wasm32")]
+async fn provision_dns(
+    env: &Env,
+    username: &str,
+    subdomain_req: &OrderSubdomainRequest,
+    expires: &str,
+) -> Result<Option<String>> {
+    let zone_id = env.var("CF_ZONE_ID")
+        .map(|v| v.to_string())
+        .unwrap_or_default();
+    let domain = env.var("DOMAIN")
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| "noscha.io".to_string());
+
+    if zone_id.is_empty() {
+        console_log!("CF_ZONE_ID not set, skipping DNS provisioning");
+        return Ok(None);
+    }
+
+    let record_type = match subdomain_req.record_type.to_uppercase().as_str() {
+        "CNAME" => DnsRecordType::CNAME,
+        "A" => DnsRecordType::A,
+        "AAAA" => DnsRecordType::AAAA,
+        other => {
+            return Err(Error::RustError(format!(
+                "Unsupported DNS record type: {}",
+                other
+            )))
+        }
+    };
+
+    let is_mock = dns_mock::is_mock_dns_enabled(env);
+
+    let record_id = if is_mock {
+        dns_mock::create_dns_record(
+            &zone_id,
+            "",
+            username,
+            &record_type,
+            &subdomain_req.target,
+            subdomain_req.proxied,
+            username,
+            expires,
+            &domain,
+        )
+        .await?
+    } else {
+        let token = env.secret("CF_API_TOKEN")?.to_string();
+        dns::create_dns_record(
+            &zone_id,
+            &token,
+            username,
+            &record_type,
+            &subdomain_req.target,
+            subdomain_req.proxied,
+            username,
+            expires,
+            &domain,
+        )
+        .await?
+    };
+
+    Ok(Some(record_id))
+}
+
 /// POST /api/webhook/coinos
 #[cfg(target_arch = "wasm32")]
 async fn handle_coinos_webhook(
@@ -203,7 +275,6 @@ async fn handle_coinos_webhook(
     };
 
     // Find order by webhook secret — scan recent orders
-    // In production, we'd use an index. For now, we rely on the hash field.
     let bucket = ctx.env.bucket("BUCKET")?;
 
     let hash = match &payload.hash {
@@ -227,6 +298,87 @@ async fn handle_coinos_webhook(
                     order.status = OrderStatus::Paid;
                     order.coinos_invoice_hash = Some(hash.clone());
 
+                    // Calculate rental expiry based on plan
+                    let now_ms = js_sys::Date::now();
+                    let duration_ms =
+                        order.plan.duration_days() as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
+                    let rental_expires_ms = now_ms + duration_ms;
+                    let rental_expires_date =
+                        js_sys::Date::new(&(rental_expires_ms.into()));
+                    let rental_expires_at = rental_expires_date
+                        .to_iso_string()
+                        .as_string()
+                        .unwrap_or_default();
+                    let now_date = js_sys::Date::new_0();
+                    let now_iso = now_date
+                        .to_iso_string()
+                        .as_string()
+                        .unwrap_or_default();
+
+                    // Provision DNS if subdomain requested
+                    let mut subdomain_service: Option<SubdomainService> = None;
+                    if let Some(ref services) = order.services_requested {
+                        if let Some(ref sub_req) = services.subdomain {
+                            let record_id = provision_dns(
+                                &ctx.env,
+                                &order.username,
+                                sub_req,
+                                &rental_expires_at,
+                            )
+                            .await?;
+                            subdomain_service = Some(SubdomainService {
+                                enabled: true,
+                                record_type: sub_req.record_type.clone(),
+                                target: sub_req.target.clone(),
+                                proxied: sub_req.proxied,
+                                cf_record_id: record_id,
+                            });
+                        }
+                    }
+
+                    // Build rental object
+                    let email_service =
+                        order.services_requested.as_ref().and_then(|s| {
+                            s.email.as_ref().map(|e| EmailService {
+                                enabled: true,
+                                forward_to: e.forward_to.clone(),
+                                cf_rule_id: None,
+                            })
+                        });
+                    let nip05_service =
+                        order.services_requested.as_ref().and_then(|s| {
+                            s.nip05.as_ref().map(|n| Nip05Service {
+                                enabled: true,
+                                pubkey_hex: n.pubkey.clone(),
+                                relays: vec![],
+                            })
+                        });
+
+                    let rental = Rental {
+                        username: order.username.clone(),
+                        status: "active".to_string(),
+                        created_at: now_iso,
+                        expires_at: rental_expires_at,
+                        plan: order.plan.clone(),
+                        services: RentalServices {
+                            email: email_service,
+                            subdomain: subdomain_service,
+                            nip05: nip05_service,
+                        },
+                    };
+
+                    // Save rental to R2
+                    let rental_key =
+                        format!("rentals/{}.json", order.username);
+                    let rental_json = serde_json::to_string(&rental)
+                        .map_err(|e| Error::RustError(e.to_string()))?;
+                    bucket
+                        .put(&rental_key, rental_json)
+                        .execute()
+                        .await?;
+
+                    // Update order status
+                    order.status = OrderStatus::Provisioned;
                     let updated_json = serde_json::to_string(&order)
                         .map_err(|e| Error::RustError(e.to_string()))?;
                     bucket.put(&key, updated_json).execute().await?;
@@ -238,6 +390,86 @@ async fn handle_coinos_webhook(
     }
 
     Response::ok("no matching order")
+}
+
+/// Cleanup expired DNS records by scanning R2 rentals
+#[cfg(target_arch = "wasm32")]
+async fn cleanup_expired_dns(env: &Env) -> Result<()> {
+    let bucket = env.bucket("BUCKET")?;
+    let now_ms = js_sys::Date::now();
+
+    let list = bucket.list().prefix("rentals/").execute().await?;
+
+    for obj_entry in list.objects() {
+        let key = obj_entry.key();
+        if let Some(obj) = bucket.get(&key).execute().await? {
+            let body = obj.body().unwrap();
+            let text = body.text().await?;
+            if let Ok(mut rental) = serde_json::from_str::<Rental>(&text) {
+                if rental.status != "active" {
+                    continue;
+                }
+
+                // Parse expires_at as JS Date to compare
+                let expires_date =
+                    js_sys::Date::new(&rental.expires_at.clone().into());
+                let expires_ms = expires_date.get_time();
+
+                if expires_ms > now_ms {
+                    continue; // not yet expired
+                }
+
+                console_log!(
+                    "Cleaning up expired rental: {}",
+                    rental.username
+                );
+
+                // Delete DNS record if present
+                if let Some(ref sub) = rental.services.subdomain {
+                    if let Some(ref record_id) = sub.cf_record_id {
+                        let zone_id = env
+                            .var("CF_ZONE_ID")
+                            .map(|v| v.to_string())
+                            .unwrap_or_default();
+
+                        if !zone_id.is_empty() {
+                            let is_mock = dns_mock::is_mock_dns_enabled(env);
+                            let result = if is_mock {
+                                dns_mock::delete_dns_record(
+                                    &zone_id, "", record_id,
+                                )
+                                .await
+                            } else {
+                                let token =
+                                    env.secret("CF_API_TOKEN")?.to_string();
+                                dns::delete_dns_record(
+                                    &zone_id, &token, record_id,
+                                )
+                                .await
+                            };
+
+                            if let Err(e) = result {
+                                console_log!(
+                                    "Failed to delete DNS record {} for {}: {:?}",
+                                    record_id,
+                                    rental.username,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Mark rental as expired
+                rental.status = "expired".to_string();
+                let updated_json = serde_json::to_string(&rental)
+                    .map_err(|e| Error::RustError(e.to_string()))?;
+                bucket.put(&key, updated_json).execute().await?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -272,4 +504,12 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/webhook/coinos", handle_coinos_webhook)
         .run(req, env)
         .await
+}
+
+#[cfg(target_arch = "wasm32")]
+#[event(scheduled)]
+async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
+    if let Err(e) = cleanup_expired_dns(&env).await {
+        console_log!("Error during cleanup: {:?}", e);
+    }
 }

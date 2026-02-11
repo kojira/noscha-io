@@ -64,6 +64,39 @@ pub struct Order {
     /// Webhook secret for this order
     #[serde(skip_serializing_if = "Option::is_none")]
     pub webhook_secret: Option<String>,
+    /// Services requested in this order (for provisioning after payment)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub services_requested: Option<OrderServicesRequest>,
+}
+
+/// Services requested in an order
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OrderServicesRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<OrderEmailRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subdomain: Option<OrderSubdomainRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nip05: Option<OrderNip05Request>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderEmailRequest {
+    pub forward_to: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderSubdomainRequest {
+    #[serde(rename = "type")]
+    pub record_type: String,
+    pub target: String,
+    #[serde(default)]
+    pub proxied: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderNip05Request {
+    pub pubkey: String,
 }
 
 /// POST /api/order request body
@@ -71,6 +104,8 @@ pub struct Order {
 pub struct OrderRequest {
     pub username: String,
     pub plan: Plan,
+    #[serde(default)]
+    pub services: Option<OrderServicesRequest>,
 }
 
 /// POST /api/order response
@@ -96,6 +131,59 @@ pub struct CheckUsernameResponse {
 pub struct OrderStatusResponse {
     pub order_id: String,
     pub status: OrderStatus,
+}
+
+/// Subdomain service configuration stored in rental
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubdomainService {
+    pub enabled: bool,
+    #[serde(rename = "type")]
+    pub record_type: String,
+    pub target: String,
+    #[serde(default)]
+    pub proxied: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cf_record_id: Option<String>,
+}
+
+/// Email service configuration stored in rental
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailService {
+    pub enabled: bool,
+    pub forward_to: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cf_rule_id: Option<String>,
+}
+
+/// NIP-05 service configuration stored in rental
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Nip05Service {
+    pub enabled: bool,
+    pub pubkey_hex: String,
+    #[serde(default)]
+    pub relays: Vec<String>,
+}
+
+/// Services configured for a rental
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RentalServices {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<EmailService>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subdomain: Option<SubdomainService>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nip05: Option<Nip05Service>,
+}
+
+/// Rental object stored in R2 at rentals/{username}.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rental {
+    pub username: String,
+    pub status: String,
+    pub created_at: String,
+    pub expires_at: String,
+    pub plan: Plan,
+    pub services: RentalServices,
 }
 
 /// Coinos webhook payload
