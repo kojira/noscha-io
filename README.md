@@ -4,7 +4,7 @@ Lightning-powered disposable identity services for Nostr. Rent a username and ge
 
 ## Features
 
-- **Email Receiving** — `username@noscha.io` receives mail and sends webhook notifications
+- **Email Receiving** — `username@noscha.io` receives mail and sends webhook notifications; received emails are automatically deleted after 1 hour
 - **Subdomain DNS** — `username.noscha.io` pointing to your server (A/AAAA/CNAME)
 - **NIP-05 Verification** — `username@noscha.io` Nostr identity verification
 - **Lightning Payments** — Pay with Bitcoin Lightning via [coinos](https://coinos.io)

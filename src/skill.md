@@ -192,6 +192,7 @@ Bundle discount applies automatically when all 3 services are selected. Prices m
 
 - Service is provided as-is for legitimate use
 - Abuse (spam, phishing, illegal content) will result in immediate termination
+- Received emails are automatically deleted after 1 hour
 - No personal data is collected beyond what's needed for the service
 - Payments are final and non-refundable
 - Service availability is best-effort
