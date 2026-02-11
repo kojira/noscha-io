@@ -42,17 +42,35 @@ Lightning-powered disposable identity services for Nostr. Rent a username and ge
    rustup target add wasm32-unknown-unknown
    ```
 
-3. Configure secrets (via Cloudflare dashboard or wrangler):
-   ```bash
-   wrangler secret put COINOS_API_TOKEN
-   wrangler secret put WEBHOOK_SECRET
-   wrangler secret put CF_API_TOKEN
-   wrangler secret put CF_ZONE_ID
-   wrangler secret put ADMIN_PUBKEY
-   wrangler secret put RESEND_API_KEY
-   ```
+3. Create a `.env` file with the required secrets (see [Secrets](#secrets) below).
 
 4. Configure `wrangler.toml` with your domain and R2 bucket.
+
+## Secrets
+
+The following secrets are required. Store them in `.env` (loaded automatically by deploy scripts) and/or set via `wrangler secret put`:
+
+| Secret | Description |
+|---|---|
+| `COINOS_API_TOKEN` | coinos.io API token for Lightning invoices |
+| `WEBHOOK_SECRET` | Shared secret for coinos payment webhooks |
+| `CF_API_TOKEN` | Cloudflare API token for DNS management |
+| `CF_ZONE_ID` | Cloudflare zone ID for the domain |
+| `ADMIN_PUBKEY` | Nostr public key (hex) for admin access |
+| `RESEND_API_KEY` | Resend API key for email forwarding |
+| `ADMIN_API_TOKEN` | Bearer token for Admin API access |
+| `STAGING_AUTH_TOKEN` | Auth token for staging environment gate |
+| `DISCORD_WEBHOOK_URL` | Discord webhook for notifications |
+
+## Environment Variables
+
+Set in `wrangler.toml` under `[vars]`:
+
+| Variable | Description |
+|---|---|
+| `DOMAIN` | Primary domain (e.g. `noscha.io`) |
+| `MOCK_PAYMENT` | Set `"true"` to skip real Lightning payments (dev/test) |
+| `REQUIRE_AUTH` | Set `"true"` to require NIP-07 auth for all pages (used in staging) |
 
 ## Development
 
@@ -68,15 +86,57 @@ Set `MOCK_PAYMENT = "true"` in `[vars]` to skip real Lightning payments during d
 
 ## Deploy
 
-```bash
-# Production
-npx wrangler deploy
+Two deploy scripts are provided. Both load `.env` automatically.
 
-# Staging (with auth gate)
-npx wrangler deploy --env staging
+```bash
+# Staging — deploys to staging.noscha.io
+./deploy-staging.sh
+
+# Production — deploys to noscha.io
+./deploy-production.sh
 ```
 
-The staging environment requires NIP-07 authentication (controlled by `REQUIRE_AUTH = "true"`). Only the `ADMIN_PUBKEY` holder can access the staging site.
+### Staging Environment
+
+The staging environment (`staging.noscha.io`) has `REQUIRE_AUTH = "true"`, requiring NIP-07 authentication to access any page. Only the `ADMIN_PUBKEY` holder (or requests with `STAGING_AUTH_TOKEN`) can access the staging site. Use staging to verify changes before production deployment.
+
+## Admin API
+
+The Admin API (`/api/admin/*`) supports two authentication methods:
+
+1. **Bearer Token** — `Authorization: Bearer <ADMIN_API_TOKEN>`
+2. **NIP-07 Signature** — Nostr event-based auth from the admin dashboard
+
+Both methods require the `ADMIN_PUBKEY` to match.
+
+## Testing
+
+### Unit Tests
+
+```bash
+cargo test --lib
+```
+
+Currently **83 tests** covering validation, types, DNS, email, NIP-05, and admin logic.
+
+### E2E Tests (Staging)
+
+```bash
+./tests/e2e_staging.sh
+```
+
+Runs end-to-end tests against `staging.noscha.io` — checks API endpoints, health, plans, NIP-05, and admin operations.
+
+## LLM / AI Documentation
+
+The following endpoints provide machine-readable documentation:
+
+| Endpoint | Description |
+|---|---|
+| `/llms.txt` | Plain-text overview for LLM consumption |
+| `/skill.md` | Skill description in Markdown |
+| `/api/docs` | API documentation (human & machine readable) |
+| `/api/info` | JSON service metadata |
 
 ## Project Structure
 
@@ -97,6 +157,11 @@ The staging environment requires NIP-07 authentication (controlled by `REQUIRE_A
 │   ├── email_shim.js   # Email routing handler (JS)
 │   ├── resend.rs       # Resend email API
 │   └── validation.rs   # Input validation
+├── tests/
+│   ├── e2e_staging.sh  # E2E tests for staging
+│   └── e2e_test.sh     # E2E test utilities
+├── deploy-staging.sh   # Deploy to staging
+├── deploy-production.sh # Deploy to production
 ├── worker-entry.mjs    # Worker entry point (JS shim + auth gate)
 ├── wrangler.toml       # Cloudflare Workers config
 ├── Cargo.toml          # Rust dependencies
