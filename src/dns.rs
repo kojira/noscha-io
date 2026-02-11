@@ -137,7 +137,7 @@ pub async fn create_dns_record(
         zone_id
     );
 
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     headers.set("Content-Type", "application/json")?;
     headers.set("Authorization", &format!("Bearer {}", token))?;
 
@@ -190,7 +190,7 @@ pub async fn delete_dns_record(zone_id: &str, token: &str, record_id: &str) -> R
         zone_id, record_id
     );
 
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     headers.set("Authorization", &format!("Bearer {}", token))?;
 
     let mut init = RequestInit::new();
@@ -228,7 +228,7 @@ pub async fn update_dns_record(
         content: content.to_string(),
     };
 
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     headers.set("Content-Type", "application/json")?;
     headers.set("Authorization", &format!("Bearer {}", token))?;
 

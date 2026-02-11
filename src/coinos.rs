@@ -46,7 +46,7 @@ pub async fn create_invoice(
         },
     };
 
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     headers.set("Content-Type", "application/json")?;
     headers.set("Authorization", &format!("Bearer {}", api_token))?;
     headers.set("User-Agent", USER_AGENT)?;

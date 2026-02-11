@@ -30,8 +30,8 @@ pub async fn handle_nip05(
 ) -> Result<Response> {
     // Get the ?name query parameter
     let name = match ctx.param("name") {
-        Ok(n) => n,
-        Err(_) => {
+        Some(n) => n.clone(),
+        None => {
             // Try to get from query string
             let url = _req.url()?;
             match url.query_pairs().find(|(k, _)| k == "name") {
@@ -108,7 +108,7 @@ pub async fn handle_nip05(
 /// Handle CORS preflight
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_nip05_options(_req: Request, _ctx: RouteContext<()>) -> Result<Response> {
-    let mut response = Response::ok()?;
+    let mut response = Response::ok("")?;
     response.headers_mut().set("Access-Control-Allow-Origin", "*")?;
     response.headers_mut().set("Access-Control-Allow-Methods", "GET, OPTIONS")?;
     response.headers_mut().set("Access-Control-Allow-Headers", "Content-Type")?;
