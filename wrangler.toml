@@ -1,6 +1,11 @@
 name = "noscha-io"
 main = "build/worker/shim.mjs"
 compatibility_date = "2024-01-01"
+workers_dev = true
+routes = [
+  { pattern = "noscha.io", custom_domain = true },
+  { pattern = "www.noscha.io", custom_domain = true }
+]
 
 [build]
 command = "cargo install -q worker-build && worker-build --release"
