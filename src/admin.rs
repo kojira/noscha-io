@@ -585,6 +585,146 @@ pub async fn handle_admin_revoke(req: Request, ctx: RouteContext<()>) -> Result<
     }
 }
 
+/// Request body for POST /api/admin/provision
+#[derive(Debug, Deserialize)]
+pub struct AdminProvisionRequest {
+    pub username: String,
+    pub service: String,
+    pub plan: Plan,
+    #[serde(default)]
+    pub pubkey: Option<String>,
+    #[serde(default)]
+    pub dns_type: Option<String>,
+    #[serde(default)]
+    pub dns_value: Option<String>,
+}
+
+/// POST /api/admin/provision — directly provision a rental (skip payment)
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_provision(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket, &ctx.env).await {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let body: AdminProvisionRequest = req.json().await
+        .map_err(|_| Error::RustError("Invalid request body".to_string()))?;
+
+    if let Err(err) = crate::validation::validate_username(&body.username) {
+        return Response::error(err, 400);
+    }
+
+    if is_banned(&bucket, &body.username).await {
+        return Response::error("This username is blocked", 403);
+    }
+
+    let rental_key = format!("rentals/{}.json", body.username);
+    if let Some(obj) = bucket.get(&rental_key).execute().await? {
+        let obj_body = obj.body().unwrap();
+        let text = obj_body.text().await?;
+        if let Ok(rental) = serde_json::from_str::<Rental>(&text) {
+            let now_ms = js_sys::Date::now();
+            let expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
+            if expires_date.get_time() > now_ms {
+                return Response::error("Username is already taken", 409);
+            }
+        }
+    }
+
+    let now_ms = js_sys::Date::now();
+    let now_date = js_sys::Date::new_0();
+    let now_iso = now_date.to_iso_string().as_string().unwrap_or_default();
+    let duration_ms = body.plan.duration_minutes() as f64 * 60.0 * 1000.0;
+    let expires_ms = now_ms + duration_ms;
+    let expires_date = js_sys::Date::new(&(expires_ms.into()));
+    let expires_at = expires_date.to_iso_string().as_string().unwrap_or_default();
+
+    let is_bundle = body.service == "bundle";
+    let mgmt_token = format!("mgmt_{:x}", js_sys::Date::now() as u64);
+
+    let nip05_service = if body.service == "nip05" || is_bundle {
+        body.pubkey.as_ref().map(|pk| Nip05Service {
+            enabled: true,
+            pubkey_hex: pk.clone(),
+            relays: vec![],
+        })
+    } else {
+        None
+    };
+
+    let email_service = if body.service == "email" || is_bundle {
+        Some(EmailService {
+            enabled: true,
+            cf_rule_id: None,
+        })
+    } else {
+        None
+    };
+
+    let subdomain_service = if body.service == "subdomain" || is_bundle {
+        if let (Some(ref dns_type), Some(ref dns_value)) = (&body.dns_type, &body.dns_value) {
+            let zone_id = ctx.env.var("CF_ZONE_ID").map(|v| v.to_string()).unwrap_or_default();
+            let domain = ctx.env.var("DOMAIN").map(|v| v.to_string()).unwrap_or_else(|_| "noscha.io".to_string());
+
+            let record_type = match dns_type.to_uppercase().as_str() {
+                "CNAME" => crate::dns::DnsRecordType::CNAME,
+                "A" => crate::dns::DnsRecordType::A,
+                "AAAA" => crate::dns::DnsRecordType::AAAA,
+                other => return Response::error(format!("Unsupported DNS record type: {}", other), 400),
+            };
+
+            let mut cf_record_id = None;
+            if !zone_id.is_empty() {
+                let is_mock = crate::dns_mock::is_mock_dns_enabled(&ctx.env);
+                let record_id = if is_mock {
+                    crate::dns_mock::create_dns_record(&zone_id, "", &body.username, &record_type, dns_value, false, &body.username, &expires_at, &domain).await?
+                } else {
+                    let token = ctx.env.secret("CF_API_TOKEN")?.to_string();
+                    crate::dns::create_dns_record(&zone_id, &token, &body.username, &record_type, dns_value, false, &body.username, &expires_at, &domain).await?
+                };
+                cf_record_id = Some(record_id);
+            }
+
+            Some(SubdomainService {
+                enabled: true,
+                record_type: dns_type.clone(),
+                target: dns_value.clone(),
+                proxied: false,
+                cf_record_id,
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let rental = Rental {
+        username: body.username.clone(),
+        status: "active".to_string(),
+        created_at: now_iso,
+        expires_at: expires_at.clone(),
+        plan: body.plan,
+        services: RentalServices {
+            email: email_service,
+            subdomain: subdomain_service,
+            nip05: nip05_service,
+        },
+        management_token: Some(mgmt_token.clone()),
+        webhook_url: None,
+    };
+
+    let rental_json = serde_json::to_string(&rental).map_err(|e| Error::RustError(e.to_string()))?;
+    bucket.put(&rental_key, rental_json).execute().await?;
+
+    Response::from_json(&serde_json::json!({
+        "success": true,
+        "username": body.username,
+        "expires_at": expires_at,
+        "management_token": mgmt_token,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

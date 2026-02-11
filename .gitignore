@@ -1,5 +1,8 @@
-/target
-/build
-/node_modules
-.wrangler
+data/
+orders%2F*
+*.json.bak
+target/
+.wrangler/
+node_modules/
 .env
+build/

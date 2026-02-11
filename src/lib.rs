@@ -13,7 +13,6 @@ mod coinos_mock;
 #[cfg(target_arch = "wasm32")]
 mod dns_mock;
 #[cfg(target_arch = "wasm32")]
-pub mod resend;
 
 #[cfg(target_arch = "wasm32")]
 use serde::Serialize;
@@ -24,7 +23,7 @@ use worker::*;
 use admin::{
     handle_admin_ban, handle_admin_challenge, handle_admin_extend, handle_admin_login,
     handle_admin_page, handle_admin_pricing_get, handle_admin_pricing_put,
-    handle_admin_rentals, handle_admin_revoke, handle_admin_stats, handle_admin_unban,
+    handle_admin_rentals, handle_admin_provision, handle_admin_revoke, handle_admin_stats, handle_admin_unban,
     handle_public_pricing,
 };
 #[cfg(target_arch = "wasm32")]
@@ -259,17 +258,6 @@ async fn handle_create_order(
         return Response::error("webhook_url must be a valid HTTP(S) URL", 400);
     }
 
-    // Validate forward_to email if email service is requested
-    if let Some(ref services) = body.services {
-        if let Some(ref email_req) = services.email {
-            if let Some(ref fwd) = email_req.forward_to {
-                if let Err(err) = validation::validate_forward_email(fwd) {
-                    return Response::error(format!("Invalid forwarding email: {}", err), 400);
-                }
-            }
-        }
-    }
-
     // Check availability
     let bucket = ctx.env.bucket("BUCKET")?;
 
@@ -454,9 +442,8 @@ async fn handle_confirm_webhook(
         }
 
         let email_service = order.services_requested.as_ref().and_then(|s| {
-            s.email.as_ref().map(|e| EmailService {
+            s.email.as_ref().map(|_e| EmailService {
                 enabled: true,
-                forward_to: e.forward_to.clone().unwrap_or_default(),
                 cf_rule_id: None,
             })
         });
@@ -741,9 +728,8 @@ async fn handle_coinos_webhook(
                     // Build rental object
                     let email_service =
                         order.services_requested.as_ref().and_then(|s| {
-                            s.email.as_ref().map(|e| EmailService {
+                            s.email.as_ref().map(|_e| EmailService {
                                 enabled: true,
-                                forward_to: e.forward_to.clone().unwrap_or_default(),
                                 cf_rule_id: None,
                             })
                         });
@@ -1055,8 +1041,8 @@ fn render_my_page(rental: &Rental, env: &Env, management_token: &str) -> String 
     if let Some(ref email) = rental.services.email {
         if email.enabled {
             services_html.push_str(&format!(
-                "<div class='svc'><span class='svc-badge email'>Email</span> {}@{} &rarr; {}</div>",
-                rental.username, domain, email.forward_to
+                "<div class='svc'><span class='svc-badge email'>Email</span> {}@{}</div>",
+                rental.username, domain
             ));
         }
     }
@@ -1399,7 +1385,7 @@ fn generate_skill_md(pricing: &std::collections::HashMap<String, std::collection
 
 ## Service Overview
 
-noscha.io provides **disposable email forwarding, subdomain DNS, and NIP-05 Nostr identity** - all paid instantly via Lightning Network. No KYC, no signup, no accounts. Just pick a username, pay sats, and your services are live.
+noscha.io provides **disposable email notifications, subdomain DNS, and NIP-05 Nostr identity** - all paid instantly via Lightning Network. No KYC, no signup, no accounts. Just pick a username, pay sats, and your services are live.
 
 **Base URL:** `https://noscha.io`
 
@@ -1501,7 +1487,7 @@ Check if a username is available for registration.
 Create a new rental order. Returns a Lightning invoice.
 - **Body**: `{"username": string, "plan": string, "services"?: {...}}`
 - **plan**: `"1d"` | `"7d"` | `"30d"` | `"90d"` | `"365d"`
-- **services.email**: `{"forward_to": "email@example.com"}`
+- **services.email**: `{}`
 - **services.subdomain**: `{"type": "A"|"AAAA"|"CNAME", "target": string, "proxied"?: bool}`
 - **services.nip05**: `{"pubkey": "hex_pubkey"}`
 - Returns `{"order_id", "amount_sats", "bolt11", "expires_at", "management_token"?}`
@@ -1550,7 +1536,7 @@ Send an email via Resend API from your noscha.io email address.
 Update rental settings, currently supports setting webhook URL for email notifications.
 - **management_token**: Your rental's management token for authentication
 - **Body**: `{"webhook_url": "https://your-server.com/webhook"}` (or null to disable)
-- When webhook_url is set, incoming emails will trigger a POST to this URL instead of forwarding via Resend
+- When webhook_url is set, incoming emails will trigger a POST to this URL
 - Webhook payload: `{"event": "email_received", "from": "sender@example.com", "to": "you@noscha.io", "subject": "...", "url": "https://noscha.io/api/mail/{token}", "received_at": "2026-02-11T..."}`
 
 ## Pricing (sats, Lightning Network)
@@ -1581,7 +1567,7 @@ Get a NIP-05 identity from noscha.io and use it instantly with nostaro for a com
 
 ## Typical Agent Workflow
 
-1. **Decide** what services you need (email forwarding? subdomain? NIP-05?)
+1. **Decide** what services you need (email notifications? subdomain? NIP-05?)
 2. **GET /api/check/{username}** - verify availability
 3. **GET /api/pricing** - confirm current pricing
 4. **POST /api/order** - create order with desired services
@@ -1597,8 +1583,7 @@ Get a NIP-05 identity from noscha.io and use it instantly with nostaro for a com
 - Lightning Network payments only (Bitcoin)
 - No refunds (disposable service by design)
 - DNS propagation may take up to 5 minutes after provisioning
-- Email forwarding is one-to-one (one forwarding address per username)
-- All services under one username share the same expiry date
+- - All services under one username share the same expiry date
 
 ## Terms of Service (Summary)
 
@@ -1640,6 +1625,23 @@ async fn handle_llms_txt(_req: Request, ctx: RouteContext<()>) -> Result<Respons
     let _ = headers.set("Content-Type", "text/plain; charset=utf-8");
     let _ = headers.set("Access-Control-Allow-Origin", "*");
     Ok(Response::ok(content)?.with_headers(headers))
+}
+
+/// GET /og-image.png — serve OG image from R2
+#[cfg(target_arch = "wasm32")]
+async fn handle_og_image(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    match bucket.get("static/og-image.png").execute().await? {
+        Some(obj) => {
+            let body = obj.body().unwrap();
+            let bytes = body.bytes().await?;
+            let headers = Headers::new();
+            let _ = headers.set("Content-Type", "image/png");
+            let _ = headers.set("Cache-Control", "public, max-age=86400");
+            Ok(Response::from_bytes(bytes)?.with_headers(headers))
+        }
+        None => Response::error("Not Found", 404),
+    }
 }
 
 /// GET /skill.md — dynamic pricing
@@ -1684,6 +1686,8 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .get("/", |_, _| {
             Response::from_html(ui::landing_page_html())
         })
+        .get_async("/og-image.png", handle_og_image)
+        .head_async("/og-image.png", handle_og_image)
         .get_async("/skill.md", handle_skill_md)
         .get_async("/llms.txt", handle_llms_txt)
         .get("/.well-known/ai-plugin.json", |_, _| {
@@ -1704,7 +1708,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
                 description: "Lightning Network powered disposable email, subdomain & NIP-05 service. No KYC, no signup, instant activation.",
                 version: "0.1.0",
                 features: vec![
-                    "Disposable email forwarding ({username}@noscha.io)",
+                    "Email notifications ({username}@noscha.io)",
                     "Subdomain provisioning ({username}.noscha.io)",
                     "NIP-05 Nostr identity verification",
                     "Lightning Network instant payments",
@@ -1756,6 +1760,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/admin/unban/:username", handle_admin_unban)
         .post_async("/api/admin/extend/:username", handle_admin_extend)
         .post_async("/api/admin/revoke/:username", handle_admin_revoke)
+        .post_async("/api/admin/provision", handle_admin_provision)
         .run(req, env)
         .await
 }

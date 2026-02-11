@@ -2,7 +2,7 @@
 
 ## Service Overview
 
-noscha.io provides **disposable email forwarding, subdomain DNS, and NIP-05 Nostr identity** — all paid instantly via Lightning Network. No KYC, no signup, no accounts. Just pick a username, pay sats, and your services are live.
+noscha.io provides **disposable email notifications, subdomain DNS, and NIP-05 Nostr identity** — all paid instantly via Lightning Network. No KYC, no signup, no accounts. Just pick a username, pay sats, and your services are live.
 
 **Base URL:** `https://noscha.io`
 
@@ -104,7 +104,7 @@ Check if a username is available for registration.
 Create a new rental order. Returns a Lightning invoice.
 - **Body**: `{"username": string, "plan": string, "services"?: {...}}`
 - **plan**: `"1d"` | `"7d"` | `"30d"` | `"90d"` | `"365d"`
-- **services.email**: `{"forward_to": "email@example.com"}`
+- **services.email**: `{}`
 - **services.subdomain**: `{"type": "A"|"AAAA"|"CNAME", "target": string, "proxied"?: bool}`
 - **services.nip05**: `{"pubkey": "hex_pubkey"}`
 - Returns `{"order_id", "amount_sats", "bolt11", "expires_at", "management_token"?}`
@@ -153,7 +153,7 @@ Send an email via Resend API from your noscha.io email address.
 Update rental settings, currently supports setting webhook URL for email notifications.
 - **management_token**: Your rental's management token for authentication
 - **Body**: `{"webhook_url": "https://your-server.com/webhook"}` (or null to disable)
-- When webhook_url is set, incoming emails will trigger a POST to this URL instead of forwarding via Resend
+- When webhook_url is set, incoming emails will trigger a POST to this URL
 - Webhook payload: `{"event": "email_received", "from": "sender@example.com", "to": "you@noscha.io", "subject": "...", "url": "https://noscha.io/api/mail/{token}", "received_at": "2026-02-11T..."}`
 
 ## Pricing (sats, Lightning Network)
@@ -170,7 +170,7 @@ Bundle discount applies automatically when all 3 services are selected. Prices m
 
 ## Typical Agent Workflow
 
-1. **Decide** what services you need (email forwarding? subdomain? NIP-05?)
+1. **Decide** what services you need (email notifications? subdomain? NIP-05?)
 2. **GET /api/check/{username}** — verify availability
 3. **GET /api/pricing** — confirm current pricing
 4. **POST /api/order** — create order with desired services
@@ -186,7 +186,6 @@ Bundle discount applies automatically when all 3 services are selected. Prices m
 - Lightning Network payments only (Bitcoin)
 - No refunds (disposable service by design)
 - DNS propagation may take up to 5 minutes after provisioning
-- Email forwarding is one-to-one (one forwarding address per username)
 - All services under one username share the same expiry date
 
 ## Terms of Service (Summary)

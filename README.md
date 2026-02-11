@@ -1,10 +1,10 @@
 # noscha.io
 
-Lightning-powered disposable identity services for Nostr. Rent a username and get email forwarding, subdomain DNS, and NIP-05 verification — no KYC, no signup, instant activation.
+Lightning-powered disposable identity services for Nostr. Rent a username and get email receiving, subdomain DNS, and NIP-05 verification — no KYC, no signup, instant activation.
 
 ## Features
 
-- **Email Forwarding** — `username@noscha.io` forwards to your real email
+- **Email Receiving** — `username@noscha.io` receives mail and sends webhook notifications
 - **Subdomain DNS** — `username.noscha.io` pointing to your server (A/AAAA/CNAME)
 - **NIP-05 Verification** — `username@noscha.io` Nostr identity verification
 - **Lightning Payments** — Pay with Bitcoin Lightning via [coinos](https://coinos.io)
@@ -57,7 +57,6 @@ The following secrets are required. Store them in `.env` (loaded automatically b
 | `CF_API_TOKEN` | Cloudflare API token for DNS management |
 | `CF_ZONE_ID` | Cloudflare zone ID for the domain |
 | `ADMIN_PUBKEY` | Nostr public key (hex) for admin access |
-| `RESEND_API_KEY` | Resend API key for email forwarding |
 | `ADMIN_API_TOKEN` | Bearer token for Admin API access |
 | `STAGING_AUTH_TOKEN` | Auth token for staging environment gate |
 | `DISCORD_WEBHOOK_URL` | Discord webhook for notifications |

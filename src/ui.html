@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
 <title>noscha.io — Lightning-powered identity services</title>
+<meta name="description" content="Lightning Network powered disposable email, subdomain &amp; NIP-05 service. No KYC, no signup, instant activation. Starting from 200 sats.">
+<meta name="keywords" content="lightning, bitcoin, nostr, nip-05, email, subdomain, disposable, anonymous, privacy">
+<meta property="og:title" content="noscha.io — Lightning-powered identity services">
+<meta property="og:description" content="Disposable email, subdomain &amp; NIP-05 via Lightning Network. No KYC, instant activation from 200 sats.">
+<meta property="og:image" content="https://noscha.io/og-image.png">
+<meta property="og:url" content="https://noscha.io">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="noscha.io — Lightning-powered identity services">
+<meta name="twitter:description" content="Disposable email, subdomain &amp; NIP-05 via Lightning Network. No KYC, instant activation from 200 sats.">
+<meta name="twitter:image" content="https://noscha.io/og-image.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -157,7 +168,7 @@ input:focus{border-color:var(--accent)}
   <!-- Info Section -->
   <div id="info-section">
     <div class="features">
-      <div class="feat"><div class="feat-icon">&#9993;</div><div class="feat-title">Email</div><div class="feat-desc">username@noscha.io forwarding</div></div>
+      <div class="feat"><div class="feat-icon">&#9993;</div><div class="feat-title">Email</div><div class="feat-desc">username@noscha.io notifications</div></div>
       <div class="feat"><div class="feat-icon">&#127760;</div><div class="feat-title">Subdomain</div><div class="feat-desc">username.noscha.io DNS</div></div>
       <div class="feat"><div class="feat-icon">&#9889;</div><div class="feat-title">NIP-05</div><div class="feat-desc">Nostr identity verification</div></div>
     </div>
@@ -201,16 +212,11 @@ input:focus{border-color:var(--accent)}
       <div class="field">
         <label>Services</label>
 
-        <label class="svc-toggle"><input type="checkbox" id="svc-email"> Email forwarding</label>
+        <label class="svc-toggle"><input type="checkbox" id="svc-email"> Email notifications</label>
         <div class="svc-fields" id="svc-email-fields">
-          <div class="field">
-            <label>Forward to</label>
-            <input type="email" id="email-forward" placeholder="you@example.com">
-          </div>
           <div style="font-size:.7rem;color:var(--muted);margin-top:.5rem;line-height:1.5">
-            ! Email forwarding is receive-only. You cannot send emails from your noscha.io address.<br>
-            ! Each user is limited to 5 forwarded emails per 24 hours.<br>
-            ! During high traffic periods, email forwarding may be temporarily unavailable.
+            Incoming emails will be delivered via webhook notification to your webhook URL.<br>
+            ! Each user is limited to 5 emails per 24 hours.
           </div>
         </div>
 
@@ -251,7 +257,7 @@ input:focus{border-color:var(--accent)}
           <li>No spam or bulk email usage</li>
           <li>No illegal activities</li>
           <li>Service may be suspended for abuse</li>
-          <li>Email forwarding limits apply (5/day per user)</li>
+          <li>Email limits apply (5/day per user)</li>
           <li>noscha.io reserves the right to terminate accounts that violate these terms</li>
         </ul>
         <label style="display:flex;align-items:center;gap:.4rem;margin-top:.6rem;cursor:pointer;color:var(--text);font-size:.75rem">
@@ -458,7 +464,7 @@ input:focus{border-color:var(--accent)}
 
     var services = {};
     if(document.getElementById('svc-email').checked){
-      services.email = {forward_to: document.getElementById('email-forward').value.trim()};
+      services.email = {};
     }
     if(document.getElementById('svc-subdomain').checked){
       services.subdomain = {

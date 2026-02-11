@@ -218,7 +218,7 @@ function extractMultipartBodies(contentType, body) {
 }
 
 // Email event handler - called by Cloudflare Email Routing
-// Uses Resend API to forward emails instead of message.forward()
+// Handles incoming emails via webhook notification
 export default {
   async email(message, env, ctx) {
     const recipient = message.to;
@@ -282,7 +282,7 @@ export default {
     }
 
     if (emailCount.count >= DAILY_LIMIT) {
-      message.setReject("Daily email forwarding limit reached (5/day)");
+      message.setReject("Daily email limit reached (5/day)");
       return;
     }
 
@@ -321,7 +321,7 @@ export default {
       return;
     }
 
-    // Check if rental has webhook_url - if so, send notification and skip Resend forwarding
+    // Check if rental has webhook_url - if so, send notification 
     if (rental.webhook_url) {
       try {
         const webhookPayload = {

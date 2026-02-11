@@ -311,16 +311,7 @@
         "type": "object",
         "properties": {
           "email": {
-            "type": "object",
-            "properties": {
-              "forward_to": {
-                "type": "string",
-                "format": "email"
-              }
-            },
-            "required": [
-              "forward_to"
-            ]
+            "type": "object"
           },
           "subdomain": {
             "type": "object",

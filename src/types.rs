@@ -207,10 +207,7 @@ pub struct OrderServicesRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderEmailRequest {
-    #[serde(default)]
-    pub forward_to: Option<String>,
-}
+pub struct OrderEmailRequest {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderSubdomainRequest {
@@ -286,7 +283,6 @@ pub struct SubdomainService {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmailService {
     pub enabled: bool,
-    pub forward_to: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cf_rule_id: Option<String>,
 }

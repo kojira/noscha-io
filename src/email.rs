@@ -1,5 +1,3 @@
-use crate::types::Rental;
-
 /// Validate an email address (basic format check)
 pub fn validate_email(email: &str) -> Result<(), String> {
     if email.is_empty() {
@@ -55,30 +53,10 @@ pub fn extract_username(recipient: &str, domain: &str) -> Option<String> {
     }
 }
 
-/// Look up the forwarding address from a rental if email is enabled and the rental is active
-pub fn lookup_forward_address(rental: &Rental) -> Option<String> {
-    if rental.status != "active" {
-        return None;
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        if crate::types::is_expired_iso(&rental.expires_at) {
-            return None;
-        }
-    }
-    rental.services.email.as_ref().and_then(|email_svc| {
-        if email_svc.enabled && !email_svc.forward_to.is_empty() {
-            Some(email_svc.forward_to.clone())
-        } else {
-            None
-        }
-    })
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::*;
 
     #[test]
     fn test_validate_email_valid() {
@@ -160,70 +138,9 @@ mod tests {
         assert_eq!(extract_username("@noscha.io", "noscha.io"), None);
     }
 
-    fn make_rental(status: &str, email_enabled: bool, forward_to: &str) -> Rental {
-        Rental {
-            username: "alice".to_string(),
-            status: status.to_string(),
-            created_at: "2025-01-01T00:00:00Z".to_string(),
-            expires_at: "2025-02-01T00:00:00Z".to_string(),
-            plan: Plan::ThirtyDays,
-            services: RentalServices {
-                email: Some(EmailService {
-                    enabled: email_enabled,
-                    forward_to: forward_to.to_string(),
-                    cf_rule_id: None,
-                }),
-                subdomain: None,
-                nip05: None,
-            },
-            management_token: None,
-            webhook_url: None,
-        }
-    }
 
-    #[test]
-    fn test_lookup_forward_active_enabled() {
-        let rental = make_rental("active", true, "alice@example.com");
-        assert_eq!(
-            lookup_forward_address(&rental),
-            Some("alice@example.com".to_string())
-        );
-    }
 
-    #[test]
-    fn test_lookup_forward_expired() {
-        let rental = make_rental("expired", true, "alice@example.com");
-        assert_eq!(lookup_forward_address(&rental), None);
-    }
 
-    #[test]
-    fn test_lookup_forward_disabled() {
-        let rental = make_rental("active", false, "alice@example.com");
-        assert_eq!(lookup_forward_address(&rental), None);
-    }
 
-    #[test]
-    fn test_lookup_forward_empty_address() {
-        let rental = make_rental("active", true, "");
-        assert_eq!(lookup_forward_address(&rental), None);
-    }
 
-    #[test]
-    fn test_lookup_forward_no_email_service() {
-        let rental = Rental {
-            username: "bob".to_string(),
-            status: "active".to_string(),
-            created_at: "2025-01-01T00:00:00Z".to_string(),
-            expires_at: "2025-02-01T00:00:00Z".to_string(),
-            plan: Plan::SevenDays,
-            services: RentalServices {
-                email: None,
-                subdomain: None,
-                nip05: None,
-            },
-            management_token: None,
-            webhook_url: None,
-        };
-        assert_eq!(lookup_forward_address(&rental), None);
-    }
 }
