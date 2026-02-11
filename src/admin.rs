@@ -236,11 +236,7 @@ pub async fn load_pricing(bucket: &worker::Bucket) -> crate::types::PricingConfi
             if let Some(body) = obj.body() {
                 if let Ok(text) = body.text().await {
                     if let Ok(config) = serde_json::from_str::<crate::types::PricingConfig>(&text) {
-                        let mut merged = crate::types::default_pricing();
-                        for (period, services) in config {
-                            merged.entry(period).or_default().extend(services);
-                        }
-                        return merged;
+                        return config;
                     }
                 }
             }
