@@ -262,30 +262,6 @@ export default {
       return;
     }
 
-    // Rate limit: 5 emails per 24 hours per user
-    const DAILY_LIMIT = 5;
-    const WINDOW_MS = 24 * 60 * 60 * 1000;
-    const countKey = `emails/${username}.json`;
-    let emailCount = { count: 0, window_start: now.toISOString() };
-    try {
-      const countObj = await env.BUCKET.get(countKey);
-      if (countObj) {
-        emailCount = JSON.parse(await countObj.text());
-        const windowStart = new Date(emailCount.window_start);
-        if (now - windowStart >= WINDOW_MS) {
-          // Window expired, reset
-          emailCount = { count: 0, window_start: now.toISOString() };
-        }
-      }
-    } catch (e) {
-      console.error(`Rate limit check error: ${e.message}`);
-    }
-
-    if (emailCount.count >= DAILY_LIMIT) {
-      message.setReject("Daily email limit reached (5/day)");
-      return;
-    }
-
     // Extract subject from raw email headers
     const subjectMatch = rawEmail.match(/^Subject:\s*(.+)$/mi);
     const subject = subjectMatch ? subjectMatch[1].trim() : "(no subject)";
@@ -298,8 +274,8 @@ export default {
     const bodies = extractBodies(rawEmail);
     const bodyText = bodies.text || extractBody(rawEmail); // fallback to old function
 
-    // Generate random token and save to R2
-    const randomToken = crypto.randomUUID();
+    // Generate mail ID and save to R2
+    const mailId = crypto.randomUUID().split("-")[0];
     const emailData = {
       from: message.from,
       to: recipient,
@@ -308,13 +284,13 @@ export default {
       body_html: bodies.html,
       date: emailDate,
       username: username,
-      random_token: randomToken,
+      mail_id: mailId,
       created_at: now.toISOString(),
       read_at: null
     };
 
     try {
-      await env.BUCKET.put(`inbox/${randomToken}.json`, JSON.stringify(emailData));
+      await env.BUCKET.put(`inbox/${username}/${mailId}.json`, JSON.stringify(emailData));
     } catch (e) {
       console.error(`Failed to save email to inbox: ${e.message}`);
       message.setReject("Email processing failed");
@@ -329,7 +305,7 @@ export default {
           from: message.from,
           to: recipient,
           subject: subject,
-          url: `https://noscha.io/api/mail/${randomToken}`,
+          url: `https://${env.DOMAIN || "noscha.io"}/api/mail/${username}/${mailId}`,
           received_at: now.toISOString()
         };
 
@@ -348,13 +324,6 @@ export default {
         console.error(`Webhook notification error: ${e.message}`);
       }
 
-      // Increment email count after successful webhook notification
-      emailCount.count += 1;
-      try {
-        await env.BUCKET.put(countKey, JSON.stringify(emailCount));
-      } catch (e) {
-        console.error(`Failed to update email count: ${e.message}`);
-      }
       return; // Done - webhook notified
     }
 

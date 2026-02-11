@@ -147,105 +147,74 @@ async function isAuthenticated(request, env) {
   }
 }
 
-/**
- * Find rental by management token by scanning R2
- */
-async function findRentalByManagementToken(bucket, managementToken) {
-  const list = await bucket.list({ prefix: 'rentals/' });
+async function authenticateMailRequest(env, username, token) {
+  if (!token) return { error: "Missing token parameter", status: 401 };
+  const obj = await env.BUCKET.get(`rentals/${username}.json`);
+  if (!obj) return { error: "User not found", status: 404 };
+  const rental = JSON.parse(await obj.text());
+  if (rental.management_token !== token) return { error: "Invalid token", status: 401 };
+  if (rental.status !== "active") return { error: "Account not active", status: 403 };
+  const now = new Date();
+  const expires = new Date(rental.expires_at);
+  if (now > expires) return { error: "Account expired", status: 403 };
+  if (!rental.services?.email?.enabled) return { error: "Email service not enabled", status: 403 };
+  return { rental };
+}
 
+async function handleListMail(request, env, username) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+  const auth = await authenticateMailRequest(env, username, token);
+  if (auth.error) return new Response(JSON.stringify({ error: auth.error }), { status: auth.status, headers: { "Content-Type": "application/json" } });
+
+  const list = await env.BUCKET.list({ prefix: `inbox/${username}/` });
+  const emails = [];
   for (const obj of list.objects) {
     try {
-      const rental = JSON.parse(await bucket.get(obj.key).then(r => r?.text()));
-      if (rental && rental.management_token === managementToken) {
-        return { rental, key: obj.key };
+      const data = JSON.parse(await env.BUCKET.get(obj.key).then(r => r?.text()));
+      if (data) {
+        emails.push({ mail_id: data.mail_id, from: data.from, subject: data.subject, date: data.date, read_at: data.read_at, created_at: data.created_at });
       }
-    } catch (e) {
-      console.error(`Error reading rental ${obj.key}: ${e.message}`);
-    }
+    } catch (e) {}
   }
-
-  return null;
+  return new Response(JSON.stringify(emails), { headers: { "Content-Type": "application/json" } });
 }
 
-/**
- * Handle GET /api/mail/{token} - Get email from inbox and mark as read
- */
-async function handleGetMail(request, env, token) {
-  try {
-    const key = `inbox/${token}.json`;
-    const obj = await env.BUCKET.get(key);
+async function handleGetMailById(request, env, username, mailId) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+  const auth = await authenticateMailRequest(env, username, token);
+  if (auth.error) return new Response(JSON.stringify({ error: auth.error }), { status: auth.status, headers: { "Content-Type": "application/json" } });
 
-    if (!obj) {
-      return new Response(JSON.stringify({ error: "Email not found" }), {
-        status: 404,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+  const key = `inbox/${username}/${mailId}.json`;
+  const obj = await env.BUCKET.get(key);
+  if (!obj) return new Response(JSON.stringify({ error: "Email not found" }), { status: 404, headers: { "Content-Type": "application/json" } });
 
-    const emailData = JSON.parse(await obj.text());
-
-    // Mark as read on first access
-    if (!emailData.read_at) {
-      emailData.read_at = new Date().toISOString();
-      await env.BUCKET.put(key, JSON.stringify(emailData));
-    }
-
-    return new Response(JSON.stringify(emailData), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (e) {
-    return new Response(JSON.stringify({ error: "Failed to retrieve email" }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
+  const emailData = JSON.parse(await obj.text());
+  if (!emailData.read_at) {
+    emailData.read_at = new Date().toISOString();
+    await env.BUCKET.put(key, JSON.stringify(emailData));
   }
+  return new Response(JSON.stringify({ from: emailData.from, to: emailData.to, subject: emailData.subject, body_text: emailData.body_text, body_html: emailData.body_html, date: emailData.date, mail_id: emailData.mail_id, created_at: emailData.created_at, read_at: emailData.read_at }), { headers: { "Content-Type": "application/json" } });
 }
 
-/**
- * Handle POST /api/mail/send/{management_token} - Send email via Resend with rate limits
- */
-async function handleSendMail(request, env, managementToken) {
+async function handleSendMail(request, env, username) {
   try {
-    const rentalResult = await findRentalByManagementToken(env.BUCKET, managementToken);
-    if (!rentalResult) {
-      return new Response(JSON.stringify({ error: "Invalid management token" }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    const body = await request.json();
+    const { to, subject, text, management_token } = body;
 
-    const { rental, key } = rentalResult;
-    const username = key.split('/')[1].replace('.json', '');
+    const auth = await authenticateMailRequest(env, username, management_token);
+    if (auth.error) return new Response(JSON.stringify({ error: auth.error }), { status: auth.status, headers: { "Content-Type": "application/json" } });
 
-    // Check if rental is active and not expired
-    if (rental.status !== "active") {
-      return new Response(JSON.stringify({ error: "Address not active" }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    const now = new Date();
-    const expires = new Date(rental.expires_at);
-    if (now > expires) {
-      return new Response(JSON.stringify({ error: "Address expired" }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Check email service is enabled
-    if (!rental.services?.email?.enabled) {
-      return new Response(JSON.stringify({ error: "Email service not enabled" }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    if (!to || !subject || !text) {
+      return new Response(JSON.stringify({ error: "Missing required fields: to, subject, text" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
     // Rate limit: 5 emails per 24 hours per user
     const DAILY_LIMIT = 5;
     const WINDOW_MS = 24 * 60 * 60 * 1000;
-    const countKey = `emails/${username}.json`;
+    const now = new Date();
+    const countKey = `send_emails/${username}.json`;
     let emailCount = { count: 0, window_start: now.toISOString() };
     try {
       const countObj = await env.BUCKET.get(countKey);
@@ -256,79 +225,36 @@ async function handleSendMail(request, env, managementToken) {
           emailCount = { count: 0, window_start: now.toISOString() };
         }
       }
-    } catch (e) {
-      console.error(`Rate limit check error: ${e.message}`);
-    }
+    } catch (e) {}
 
     if (emailCount.count >= DAILY_LIMIT) {
-      return new Response(JSON.stringify({ error: "Daily email limit reached (5/day)" }), {
-        status: 429,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return new Response(JSON.stringify({ error: "Daily send limit reached (5/day)" }), { status: 429, headers: { "Content-Type": "application/json" } });
     }
 
-    // Parse request body
-    const body = await request.json();
-    const { to, subject, body: emailBody } = body;
-
-    if (!to || !subject || !emailBody) {
-      return new Response(JSON.stringify({ error: "Missing required fields: to, subject, body" }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Send via Resend
     const apiKey = env.RESEND_API_KEY;
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: "Email service temporarily unavailable" }), {
-        status: 503,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return new Response(JSON.stringify({ error: "Email service temporarily unavailable" }), { status: 503, headers: { "Content-Type": "application/json" } });
     }
 
     const fromAddr = `${username}@noscha.io`;
-
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: fromAddr,
-        to: [to],
-        subject: subject,
-        text: emailBody,
-      }),
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: fromAddr, to: [to], subject, text }),
     });
 
     if (!res.ok) {
-      const errText = await res.text();
-      console.error(`Resend API error: ${res.status} ${errText}`);
-      return new Response(JSON.stringify({ error: "Failed to send email" }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      console.error(`Resend API error: ${res.status} ${await res.text()}`);
+      return new Response(JSON.stringify({ error: "Failed to send email" }), { status: 500, headers: { "Content-Type": "application/json" } });
     }
 
-    // Increment email count after successful send
     emailCount.count += 1;
-    try {
-      await env.BUCKET.put(countKey, JSON.stringify(emailCount));
-    } catch (e) {
-      console.error(`Failed to update email count: ${e.message}`);
-    }
+    try { await env.BUCKET.put(countKey, JSON.stringify(emailCount)); } catch (e) {}
 
     const result = await res.json();
-    return new Response(JSON.stringify({ success: true, message_id: result.id }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return new Response(JSON.stringify({ success: true, message_id: result.id }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
-    return new Response(JSON.stringify({ error: "Invalid request: " + e.message }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return new Response(JSON.stringify({ error: "Invalid request: " + e.message }), { status: 400, headers: { "Content-Type": "application/json" } });
   }
 }
 
@@ -338,20 +264,27 @@ class UnifiedWorker extends WorkerClass {
     const url = new URL(request.url);
     const requireAuth = this.env.REQUIRE_AUTH === 'true';
 
-    // Handle new email API routes
-    if (url.pathname.startsWith('/api/mail/')) {
-      const pathParts = url.pathname.split('/');
+    // Handle mail API routes
+    if (url.pathname.startsWith("/api/mail/")) {
+      const pathParts = url.pathname.split("/").filter(Boolean); // ["api", "mail", ...]
 
-      // GET /api/mail/{token}
-      if (request.method === 'GET' && pathParts.length === 4 && pathParts[3]) {
-        const token = pathParts[3];
-        return handleGetMail(request, this.env, token);
+      // POST /api/mail/{username}/send
+      if (request.method === "POST" && pathParts.length === 4 && pathParts[3] === "send") {
+        const username = pathParts[2];
+        return handleSendMail(request, this.env, username);
       }
 
-      // POST /api/mail/send/{management_token}
-      if (request.method === 'POST' && pathParts.length === 5 && pathParts[3] === 'send' && pathParts[4]) {
-        const managementToken = pathParts[4];
-        return handleSendMail(request, this.env, managementToken);
+      // GET /api/mail/{username}/{mail_id}
+      if (request.method === "GET" && pathParts.length === 4) {
+        const username = pathParts[2];
+        const mailId = pathParts[3];
+        return handleGetMailById(request, this.env, username, mailId);
+      }
+
+      // GET /api/mail/{username}
+      if (request.method === "GET" && pathParts.length === 3) {
+        const username = pathParts[2];
+        return handleListMail(request, this.env, username);
       }
     }
 
@@ -390,32 +323,17 @@ class UnifiedWorker extends WorkerClass {
   }
 
   async scheduled(controller) {
-    // Cleanup old emails from inbox
     try {
-      const list = await this.env.BUCKET.list({ prefix: 'inbox/' });
+      const list = await this.env.BUCKET.list({ prefix: "inbox/" });
       const now = new Date();
+      const ONE_HOUR_MS = 60 * 60 * 1000;
 
       for (const obj of list.objects) {
         try {
           const email = JSON.parse(await this.env.BUCKET.get(obj.key).then(r => r?.text()));
           if (!email) continue;
-
           const createdAt = new Date(email.created_at);
-          const readAt = email.read_at ? new Date(email.read_at) : null;
-
-          let shouldDelete = false;
-
-          // Delete if read and 1 hour has passed since read
-          if (readAt && (now - readAt) >= 60 * 60 * 1000) {
-            shouldDelete = true;
-          }
-
-          // Delete if unread and 24 hours have passed since created
-          if (!readAt && (now - createdAt) >= 24 * 60 * 60 * 1000) {
-            shouldDelete = true;
-          }
-
-          if (shouldDelete) {
+          if (now - createdAt >= ONE_HOUR_MS) {
             await this.env.BUCKET.delete(obj.key);
             console.log(`Deleted old email: ${obj.key}`);
           }
