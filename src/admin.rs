@@ -58,30 +58,179 @@ pub struct ExtendRequest {
     pub days: u64,
 }
 
-/// Verify Bearer token against ADMIN_TOKEN env var
+/// Verify session token from X-Admin-Token header against R2 sessions store
 #[cfg(target_arch = "wasm32")]
-fn verify_admin_token(req: &Request, env: &Env) -> Result<()> {
-    let token = env
-        .secret("ADMIN_TOKEN")
-        .map(|s| s.to_string())
-        .map_err(|_| Error::RustError("ADMIN_TOKEN not configured".to_string()))?;
-
-    let auth_header = req
+async fn verify_session_token(req: &Request, bucket: &worker::Bucket) -> Result<()> {
+    let token = req
         .headers()
-        .get("Authorization")
-        .map_err(|_| Error::RustError("Missing Authorization header".to_string()))?
-        .ok_or_else(|| Error::RustError("Missing Authorization header".to_string()))?;
+        .get("X-Admin-Token")
+        .map_err(|_| Error::RustError("Missing X-Admin-Token header".to_string()))?
+        .ok_or_else(|| Error::RustError("Missing X-Admin-Token header".to_string()))?;
 
-    if !auth_header.starts_with("Bearer ") {
-        return Err(Error::RustError("Invalid Authorization format".to_string()));
+    let key = format!("sessions/{}.json", token);
+    let obj = bucket.get(&key).execute().await?;
+    match obj {
+        Some(obj) => {
+            let body = obj.body().unwrap();
+            let text = body.text().await?;
+            let session: crate::types::AdminSession = serde_json::from_str(&text)
+                .map_err(|e| Error::RustError(e.to_string()))?;
+            // Check expiry
+            let now_ms = js_sys::Date::now();
+            let expires_date = js_sys::Date::new(&session.expires_at.clone().into());
+            if expires_date.get_time() < now_ms {
+                return Err(Error::RustError("Session expired".to_string()));
+            }
+            Ok(())
+        }
+        None => Err(Error::RustError("Invalid session token".to_string())),
+    }
+}
+
+/// POST /api/admin/challenge — generate auth challenge
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_challenge(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let now = js_sys::Date::new_0();
+    let now_ms = js_sys::Date::now();
+    let expires_ms = now_ms + 5.0 * 60.0 * 1000.0; // 5 minutes
+    let expires_date = js_sys::Date::new(&(expires_ms.into()));
+
+    let challenge = format!("ch_{:x}_{:x}", now_ms as u64, (now_ms * 1000.0) as u64);
+    let ch = crate::types::AdminChallenge {
+        challenge: challenge.clone(),
+        created_at: now.to_iso_string().as_string().unwrap_or_default(),
+        expires_at: expires_date.to_iso_string().as_string().unwrap_or_default(),
+    };
+
+    let key = format!("challenges/{}.json", challenge);
+    let json = serde_json::to_string(&ch).map_err(|e| Error::RustError(e.to_string()))?;
+    bucket.put(&key, json).execute().await?;
+
+    Response::from_json(&serde_json::json!({ "challenge": challenge }))
+}
+
+/// POST /api/admin/login — verify NIP-07 signed event and issue session token
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_login(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let admin_pubkey = ctx.env
+        .secret("ADMIN_PUBKEY")
+        .map(|s| s.to_string())
+        .map_err(|_| Error::RustError("ADMIN_PUBKEY not configured".to_string()))?;
+
+    let event: crate::types::NostrEvent = req.json().await
+        .map_err(|_| Error::RustError("Invalid event JSON".to_string()))?;
+
+    // Verify pubkey matches admin
+    if event.pubkey != admin_pubkey {
+        return Response::error("Unauthorized: invalid pubkey", 403);
     }
 
-    let provided = &auth_header["Bearer ".len()..];
-    if provided != token {
-        return Err(Error::RustError("Invalid admin token".to_string()));
+    // Extract challenge from content
+    let challenge = event.content.trim().to_string();
+    if challenge.is_empty() {
+        return Response::error("Missing challenge in event content", 400);
     }
 
-    Ok(())
+    // Verify challenge exists in R2 and not expired
+    let ch_key = format!("challenges/{}.json", challenge);
+    let ch_obj = bucket.get(&ch_key).execute().await?;
+    match ch_obj {
+        Some(obj) => {
+            let body = obj.body().unwrap();
+            let text = body.text().await?;
+            let ch: crate::types::AdminChallenge = serde_json::from_str(&text)
+                .map_err(|e| Error::RustError(e.to_string()))?;
+            let now_ms = js_sys::Date::now();
+            let expires_date = js_sys::Date::new(&ch.expires_at.clone().into());
+            if expires_date.get_time() < now_ms {
+                // Delete expired challenge
+                let _ = bucket.delete(&ch_key).await;
+                return Response::error("Challenge expired", 400);
+            }
+            // Delete used challenge
+            let _ = bucket.delete(&ch_key).await;
+        }
+        None => {
+            return Response::error("Invalid challenge", 400);
+        }
+    }
+
+    // Issue session token (24h TTL)
+    let now = js_sys::Date::new_0();
+    let now_ms = js_sys::Date::now();
+    let expires_ms = now_ms + 24.0 * 60.0 * 60.0 * 1000.0;
+    let expires_date = js_sys::Date::new(&(expires_ms.into()));
+
+    let token = format!("sess_{:x}", now_ms as u64);
+    let session = crate::types::AdminSession {
+        token: token.clone(),
+        pubkey: event.pubkey,
+        created_at: now.to_iso_string().as_string().unwrap_or_default(),
+        expires_at: expires_date.to_iso_string().as_string().unwrap_or_default(),
+    };
+
+    let sess_key = format!("sessions/{}.json", token);
+    let sess_json = serde_json::to_string(&session).map_err(|e| Error::RustError(e.to_string()))?;
+    bucket.put(&sess_key, sess_json).execute().await?;
+
+    Response::from_json(&serde_json::json!({ "token": token }))
+}
+
+/// GET /api/admin/pricing — get current pricing config
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_pricing_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket).await {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let pricing = load_pricing(&bucket).await;
+    Response::from_json(&pricing)
+}
+
+/// PUT /api/admin/pricing — update pricing config
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_admin_pricing_put(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket).await {
+        return Response::error("Unauthorized", 401);
+    }
+
+    let pricing: crate::types::PricingConfig = req.json().await
+        .map_err(|_| Error::RustError("Invalid pricing JSON".to_string()))?;
+
+    let json = serde_json::to_string(&pricing).map_err(|e| Error::RustError(e.to_string()))?;
+    bucket.put("config/pricing.json", json).execute().await?;
+
+    Response::from_json(&pricing)
+}
+
+/// GET /api/pricing — public pricing data (no auth required)
+#[cfg(target_arch = "wasm32")]
+pub async fn handle_public_pricing(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let pricing = load_pricing(&bucket).await;
+    Response::from_json(&pricing)
+}
+
+/// Load pricing config from R2, falling back to defaults
+#[cfg(target_arch = "wasm32")]
+pub async fn load_pricing(bucket: &worker::Bucket) -> crate::types::PricingConfig {
+    match bucket.get("config/pricing.json").execute().await {
+        Ok(Some(obj)) => {
+            if let Some(body) = obj.body() {
+                if let Ok(text) = body.text().await {
+                    if let Ok(config) = serde_json::from_str::<crate::types::PricingConfig>(&text) {
+                        return config;
+                    }
+                }
+            }
+            crate::types::default_pricing()
+        }
+        _ => crate::types::default_pricing(),
+    }
 }
 
 /// GET /admin — serve admin dashboard HTML
@@ -93,7 +242,8 @@ pub async fn handle_admin_page(_req: Request, _ctx: RouteContext<()>) -> Result<
 /// GET /admin/rentals?page=1&limit=20&status=active
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_rentals(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket).await {
         return Response::error("Unauthorized", 401);
     }
 
@@ -176,11 +326,10 @@ pub async fn handle_admin_rentals(req: Request, ctx: RouteContext<()>) -> Result
 /// GET /admin/stats
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_stats(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket).await {
         return Response::error("Unauthorized", 401);
     }
-
-    let bucket = ctx.env.bucket("BUCKET")?;
     let now_ms = js_sys::Date::now();
     let soon_ms = now_ms + 7.0 * 24.0 * 60.0 * 60.0 * 1000.0; // 7 days
 
@@ -244,12 +393,12 @@ pub async fn handle_admin_stats(req: Request, ctx: RouteContext<()>) -> Result<R
 /// POST /admin/ban/{username}
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_ban(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket).await {
         return Response::error("Unauthorized", 401);
     }
 
     let username = ctx.param("username").unwrap().to_string();
-    let bucket = ctx.env.bucket("BUCKET")?;
 
     // Check if already banned
     if is_banned(&bucket, &username).await {
@@ -302,12 +451,12 @@ pub async fn handle_admin_ban(req: Request, ctx: RouteContext<()>) -> Result<Res
 /// POST /admin/unban/{username}
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_unban(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket).await {
         return Response::error("Unauthorized", 401);
     }
 
     let username = ctx.param("username").unwrap().to_string();
-    let bucket = ctx.env.bucket("BUCKET")?;
 
     let ban_key = format!("bans/{}.json", username);
     if !is_banned(&bucket, &username).await {
@@ -321,7 +470,8 @@ pub async fn handle_admin_unban(req: Request, ctx: RouteContext<()>) -> Result<R
 /// POST /admin/extend/{username}  body: {"days": 30}
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket).await {
         return Response::error("Unauthorized", 401);
     }
 
@@ -334,8 +484,6 @@ pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Res
     if body.days == 0 || body.days > 365 {
         return Response::error("Days must be between 1 and 365", 400);
     }
-
-    let bucket = ctx.env.bucket("BUCKET")?;
     let rental_key = format!("rentals/{}.json", username);
 
     let obj = bucket.get(&rental_key).execute().await?;
@@ -372,12 +520,12 @@ pub async fn handle_admin_extend(mut req: Request, ctx: RouteContext<()>) -> Res
 /// POST /admin/revoke/{username}
 #[cfg(target_arch = "wasm32")]
 pub async fn handle_admin_revoke(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    if let Err(_) = verify_admin_token(&req, &ctx.env) {
+    let bucket = ctx.env.bucket("BUCKET")?;
+    if let Err(_) = verify_session_token(&req, &bucket).await {
         return Response::error("Unauthorized", 401);
     }
 
     let username = ctx.param("username").unwrap().to_string();
-    let bucket = ctx.env.bucket("BUCKET")?;
     let rental_key = format!("rentals/{}.json", username);
 
     let obj = bucket.get(&rental_key).execute().await?;

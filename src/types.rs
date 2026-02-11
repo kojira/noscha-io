@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Service types that can be individually selected
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -64,6 +64,40 @@ impl Plan {
             plan.bundle_price()
         } else {
             unique.iter().map(|s| plan.service_price(s)).sum()
+        }
+    }
+
+    pub fn period_key(&self) -> &'static str {
+        match self {
+            Plan::OneDay => "1d",
+            Plan::SevenDays => "7d",
+            Plan::ThirtyDays => "30d",
+            Plan::NinetyDays => "90d",
+            Plan::OneYear => "365d",
+        }
+    }
+
+    pub fn service_price_dynamic(&self, service: &ServiceType, pricing: &PricingConfig) -> u64 {
+        let key = self.period_key();
+        let svc_key = match service {
+            ServiceType::Subdomain => "subdomain",
+            ServiceType::EmailForwarding => "email",
+            ServiceType::Nip05 => "nip05",
+        };
+        pricing.get(key).and_then(|m| m.get(svc_key)).copied().unwrap_or_else(|| self.service_price(service))
+    }
+
+    pub fn bundle_price_dynamic(&self, pricing: &PricingConfig) -> u64 {
+        let key = self.period_key();
+        pricing.get(key).and_then(|m| m.get("bundle")).copied().unwrap_or_else(|| self.bundle_price())
+    }
+
+    pub fn calculate_total_dynamic(plan: &Plan, services: &[ServiceType], pricing: &PricingConfig) -> u64 {
+        let unique: HashSet<&ServiceType> = services.iter().collect();
+        if unique.len() == 3 {
+            plan.bundle_price_dynamic(pricing)
+        } else {
+            unique.iter().map(|s| plan.service_price_dynamic(s, pricing)).sum()
         }
     }
 
@@ -272,6 +306,64 @@ pub struct CoinosWebhookPayload {
     pub secret: Option<String>,
 }
 
+/// Dynamic pricing config stored in R2 at config/pricing.json
+/// Format: {"1d":{"subdomain":500,"email":1500,"nip05":200,"bundle":1800}, ...}
+pub type PricingConfig = HashMap<String, HashMap<String, u64>>;
+
+/// Get default pricing config
+pub fn default_pricing() -> PricingConfig {
+    let mut config = HashMap::new();
+    let periods: [(&str, [(&str, u64); 4]); 5] = [
+        ("1d", [("subdomain",500),("email",1500),("nip05",200),("bundle",1800)]),
+        ("7d", [("subdomain",1000),("email",2500),("nip05",500),("bundle",3300)]),
+        ("30d", [("subdomain",2000),("email",5000),("nip05",1000),("bundle",6500)]),
+        ("90d", [("subdomain",5000),("email",12000),("nip05",2500),("bundle",16000)]),
+        ("365d", [("subdomain",15000),("email",40000),("nip05",8000),("bundle",50000)]),
+    ];
+    for (period, prices) in periods {
+        let mut m = HashMap::new();
+        for (svc, price) in prices {
+            m.insert(svc.to_string(), price);
+        }
+        config.insert(period.to_string(), m);
+    }
+    config
+}
+
+/// Admin session stored in R2 at sessions/{token}.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSession {
+    pub token: String,
+    pub pubkey: String,
+    pub created_at: String,
+    pub expires_at: String,
+}
+
+/// Admin challenge stored in R2 at challenges/{challenge}.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminChallenge {
+    pub challenge: String,
+    pub created_at: String,
+    pub expires_at: String,
+}
+
+/// Nostr event from NIP-07 signing (simplified, no crypto verification)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NostrEvent {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub pubkey: String,
+    #[serde(default)]
+    pub created_at: Option<u64>,
+    #[serde(default)]
+    pub kind: Option<u32>,
+    #[serde(default)]
+    pub tags: Option<Vec<Vec<String>>>,
+    pub content: String,
+    #[serde(default)]
+    pub sig: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +432,51 @@ mod tests {
         assert_eq!(json, "\"pending\"");
         let status: OrderStatus = serde_json::from_str("\"paid\"").unwrap();
         assert_eq!(status, OrderStatus::Paid);
+    }
+
+    #[test]
+    fn test_pricing_config_default() {
+        let config = default_pricing();
+        assert_eq!(*config.get("30d").unwrap().get("bundle").unwrap(), 6500);
+        assert_eq!(*config.get("90d").unwrap().get("bundle").unwrap(), 16000);
+        assert_eq!(*config.get("365d").unwrap().get("bundle").unwrap(), 50000);
+    }
+
+    #[test]
+    fn test_pricing_config_serde() {
+        let json = r#"{"30d":{"subdomain":2000,"email":5000,"nip05":1000,"bundle":5000},"90d":{"subdomain":5000,"email":12000,"nip05":2500,"bundle":12000}}"#;
+        let config: PricingConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(*config.get("30d").unwrap().get("bundle").unwrap(), 5000);
+        assert_eq!(*config.get("90d").unwrap().get("bundle").unwrap(), 12000);
+    }
+
+    #[test]
+    fn test_nostr_event_serde() {
+        let event = NostrEvent {
+            id: None,
+            pubkey: "abc".into(),
+            created_at: None,
+            kind: Some(27235),
+            tags: None,
+            content: "hello".into(),
+            sig: None,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: NostrEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.pubkey, "abc");
+        assert_eq!(parsed.kind, Some(27235));
+    }
+
+    #[test]
+    fn test_admin_session_serde() {
+        let session = AdminSession {
+            token: "sess_abc".into(),
+            pubkey: "deadbeef".into(),
+            created_at: "2025-01-01T00:00:00Z".into(),
+            expires_at: "2025-01-02T00:00:00Z".into(),
+        };
+        let json = serde_json::to_string(&session).unwrap();
+        let parsed: AdminSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.token, "sess_abc");
     }
 }

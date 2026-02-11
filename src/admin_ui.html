@@ -10,8 +10,6 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
 a{color:var(--purple);text-decoration:none}
 .container{max-width:960px;margin:0 auto;padding:2rem 1.5rem}
-
-/* Header */
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem}
 .logo{font-size:1.5rem;font-weight:700}
 .logo span:first-child{color:var(--purple)}
@@ -19,20 +17,14 @@ a{color:var(--purple);text-decoration:none}
 .logo span:last-child{color:var(--muted);font-size:.9rem;font-weight:400;margin-left:.5rem}
 .logout-btn{background:none;border:1px solid var(--border);color:var(--muted);padding:.4rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem}
 .logout-btn:hover{border-color:var(--red);color:var(--red)}
-
-/* Stats cards */
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.5rem}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem;text-align:center}
 .stat-val{font-size:1.5rem;font-weight:700;color:var(--purple)}
 .stat-val.warn{color:var(--yellow)}
 .stat-val.revenue{color:var(--orange)}
 .stat-label{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:.25rem}
-
-/* Section */
 .section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem}
 .section h2{font-size:1.1rem;margin-bottom:1rem;color:var(--text)}
-
-/* Toolbar */
 .toolbar{display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center}
 .filter-btn{padding:.4rem .8rem;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--muted);cursor:pointer;font-size:.8rem;transition:all .2s}
 .filter-btn:hover{border-color:var(--purple);color:var(--text)}
@@ -42,27 +34,19 @@ a{color:var(--purple);text-decoration:none}
 .page-btn{padding:.3rem .6rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--muted);cursor:pointer;font-size:.8rem}
 .page-btn:hover{border-color:var(--purple)}
 .page-btn:disabled{opacity:.3;cursor:not-allowed}
-
-/* Table */
 .tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:.85rem}
 th{text-align:left;padding:.5rem .5rem;border-bottom:2px solid var(--border);color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
 td{padding:.5rem .5rem;border-bottom:1px solid var(--border);white-space:nowrap}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:rgba(139,92,246,.05)}
-
-/* Status badges */
 .badge{display:inline-block;padding:.15rem .5rem;border-radius:12px;font-size:.75rem;font-weight:600}
 .badge-active{background:#22c55e22;color:var(--green)}
 .badge-expired{background:#88888822;color:var(--muted)}
 .badge-banned{background:#ef444422;color:var(--red)}
 .badge-warn{background:#eab30822;color:var(--yellow)}
-
-/* Service pills */
 .svc-pill{display:inline-block;padding:.1rem .35rem;border-radius:4px;font-size:.65rem;margin-right:.2rem;background:var(--bg);border:1px solid var(--border);color:var(--muted)}
 .svc-pill.on{border-color:var(--purple);color:var(--purple)}
-
-/* Action buttons */
 .act-btn{padding:.25rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--muted);cursor:pointer;font-size:.7rem;margin-right:.25rem;transition:all .15s}
 .act-btn:hover{border-color:var(--purple);color:var(--text)}
 .act-ban{color:var(--red);border-color:rgba(239,68,68,.3)}
@@ -73,28 +57,18 @@ tr:hover td{background:rgba(139,92,246,.05)}
 .act-extend:hover{border-color:var(--orange);background:rgba(249,115,22,.1)}
 .act-revoke{color:var(--red);border-color:rgba(239,68,68,.3)}
 .act-revoke:hover{border-color:var(--red);background:rgba(239,68,68,.1)}
-
-/* Login screen */
 #login-screen{max-width:360px;margin:15vh auto}
 #login-screen .logo{font-size:2rem;text-align:center;margin-bottom:.5rem}
 #login-screen .sub{text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:2rem}
-.field{margin-bottom:1rem}
-.field label{display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem;color:var(--muted)}
-input[type=password]{width:100%;padding:.6rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.95rem;outline:none}
-input[type=password]:focus{border-color:var(--purple)}
 .btn{display:block;width:100%;padding:.75rem;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;transition:all .2s}
 .btn-primary{background:linear-gradient(135deg,var(--purple),var(--orange));color:#fff}
 .btn-primary:hover{opacity:.9}
 .btn-primary:disabled{opacity:.4;cursor:not-allowed}
 .login-err{color:var(--red);font-size:.8rem;margin-top:.5rem;text-align:center;min-height:1.2em}
-
-/* Toast */
 .toast{position:fixed;bottom:2rem;right:2rem;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;font-size:.85rem;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none}
 .toast.show{opacity:1}
 .toast.ok{border-color:var(--green);color:var(--green)}
 .toast.err{border-color:var(--red);color:var(--red)}
-
-/* Modal */
 .modal-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:100;display:none;align-items:center;justify-content:center}
 .modal-bg.open{display:flex}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;width:340px;max-width:90vw}
@@ -103,10 +77,16 @@ input[type=password]:focus{border-color:var(--purple)}
 .modal-actions button{flex:1;padding:.5rem;border-radius:6px;font-size:.85rem;cursor:pointer;border:1px solid var(--border);background:var(--bg);color:var(--text)}
 .modal-actions .confirm{background:var(--purple);border-color:var(--purple);color:#fff}
 .modal input[type=number]{width:100%;padding:.5rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;outline:none}
-
-/* Responsive */
+.field{margin-bottom:1rem}
+.field label{display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem;color:var(--muted)}
+#pricing-table input[type=number]{width:100%;padding:.4rem .5rem;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:.85rem;outline:none;min-width:80px}
+#pricing-table input[type=number]:focus{border-color:var(--purple)}
+.save-btn{display:inline-block;padding:.5rem 1.5rem;border:none;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;background:var(--purple);color:#fff;margin-top:.5rem}
+.save-btn:hover{opacity:.9}
+.save-btn:disabled{opacity:.4;cursor:not-allowed}
 @media(max-width:700px){
   .stats{grid-template-columns:repeat(2,1fr)}
+  .pricing-grid{grid-template-columns:1fr}
   .container{padding:1rem}
 }
 </style>
@@ -118,11 +98,8 @@ input[type=password]:focus{border-color:var(--purple)}
   <div class="logo"><span>noscha</span><span>.io</span></div>
   <p class="sub">Admin Dashboard</p>
   <div class="section">
-    <div class="field">
-      <label>Admin Token</label>
-      <input type="password" id="token-input" placeholder="Enter admin token">
-    </div>
-    <button class="btn btn-primary" id="login-btn">Login</button>
+    <p id="nostr-status" style="text-align:center;margin-bottom:1rem;font-size:.85rem;color:var(--muted)">Checking for NIP-07 extension...</p>
+    <button class="btn btn-primary" id="login-btn" disabled>Login with Nostr</button>
     <div class="login-err" id="login-err"></div>
   </div>
 </div>
@@ -141,6 +118,27 @@ input[type=password]:focus{border-color:var(--purple)}
     <div class="stat-card"><div class="stat-val warn" id="s-expiring">-</div><div class="stat-label">Expiring (7d)</div></div>
     <div class="stat-card"><div class="stat-val" id="s-banned">-</div><div class="stat-label">Banned</div></div>
     <div class="stat-card"><div class="stat-val revenue" id="s-revenue">-</div><div class="stat-label">Revenue (sats)</div></div>
+  </div>
+
+  <!-- Pricing -->
+  <div class="section">
+    <h2>Pricing (sats)</h2>
+    <div class="tbl-wrap">
+      <table id="pricing-table">
+        <thead>
+          <tr><th>Duration</th><th>Subdomain</th><th>Email</th><th>NIP-05</th><th style="color:var(--green)">Bundle</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1 Day</td><td><input type="number" id="p-1d-subdomain" min="0"></td><td><input type="number" id="p-1d-email" min="0"></td><td><input type="number" id="p-1d-nip05" min="0"></td><td><input type="number" id="p-1d-bundle" min="0"></td></tr>
+          <tr><td>7 Days</td><td><input type="number" id="p-7d-subdomain" min="0"></td><td><input type="number" id="p-7d-email" min="0"></td><td><input type="number" id="p-7d-nip05" min="0"></td><td><input type="number" id="p-7d-bundle" min="0"></td></tr>
+          <tr><td>30 Days</td><td><input type="number" id="p-30d-subdomain" min="0"></td><td><input type="number" id="p-30d-email" min="0"></td><td><input type="number" id="p-30d-nip05" min="0"></td><td><input type="number" id="p-30d-bundle" min="0"></td></tr>
+          <tr><td>90 Days</td><td><input type="number" id="p-90d-subdomain" min="0"></td><td><input type="number" id="p-90d-email" min="0"></td><td><input type="number" id="p-90d-nip05" min="0"></td><td><input type="number" id="p-90d-bundle" min="0"></td></tr>
+          <tr><td>365 Days</td><td><input type="number" id="p-365d-subdomain" min="0"></td><td><input type="number" id="p-365d-email" min="0"></td><td><input type="number" id="p-365d-nip05" min="0"></td><td><input type="number" id="p-365d-bundle" min="0"></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <button class="save-btn" id="save-pricing-btn" style="margin-top:1rem">Save Pricing</button>
+    <span id="pricing-status" style="margin-left:.75rem;font-size:.8rem;color:var(--muted)"></span>
   </div>
 
   <!-- Rentals -->
@@ -188,72 +186,122 @@ input[type=password]:focus{border-color:var(--purple)}
 
 <script>
 (function(){
-  var token = localStorage.getItem('noscha_admin_token') || '';
+  var token = localStorage.getItem('noscha_admin_session') || '';
   var currentPage = 1;
   var currentFilter = '';
   var pageLimit = 20;
 
-  // Elements
   var loginScreen = document.getElementById('login-screen');
   var dashboard = document.getElementById('dashboard');
-  var tokenInput = document.getElementById('token-input');
   var loginBtn = document.getElementById('login-btn');
   var loginErr = document.getElementById('login-err');
   var logoutBtn = document.getElementById('logout-btn');
+  var nostrStatus = document.getElementById('nostr-status');
   var rentalsBody = document.getElementById('rentals-body');
   var prevBtn = document.getElementById('prev-btn');
   var nextBtn = document.getElementById('next-btn');
   var pageInfo = document.getElementById('page-info');
 
-  // Auto-login if token saved
-  if(token){showDashboard();}
+  // Check NIP-07
+  function checkNostr() {
+    if (window.nostr) {
+      nostrStatus.textContent = 'NIP-07 extension detected ✓';
+      nostrStatus.style.color = 'var(--green)';
+      loginBtn.disabled = false;
+    } else {
+      nostrStatus.textContent = 'No NIP-07 extension found. Install nos2x, Alby, or similar.';
+      nostrStatus.style.color = 'var(--red)';
+      loginBtn.disabled = true;
+    }
+  }
 
-  loginBtn.addEventListener('click', doLogin);
-  tokenInput.addEventListener('keydown', function(e){if(e.key==='Enter')doLogin();});
+  // Wait a bit for extension to load
+  if (window.nostr) { checkNostr(); } else { setTimeout(checkNostr, 500); }
 
-  function doLogin(){
-    token = tokenInput.value.trim();
-    if(!token){loginErr.textContent='Token required';return;}
-    loginErr.textContent = 'Verifying...';
-    apiFetch('/admin/stats').then(function(){
-      localStorage.setItem('noscha_admin_token', token);
+  // Auto-login if session saved
+  if (token) {
+    apiFetch('/api/admin/stats').then(function() {
       showDashboard();
-    }).catch(function(){
-      loginErr.textContent = 'Invalid token';
+    }).catch(function() {
+      token = '';
+      localStorage.removeItem('noscha_admin_session');
     });
   }
 
-  logoutBtn.addEventListener('click', function(){
+  loginBtn.addEventListener('click', doLogin);
+
+  async function doLogin() {
+    loginErr.textContent = '';
+    loginBtn.disabled = true;
+    try {
+      // 1. Get challenge
+      var chRes = await fetch('/api/admin/challenge', { method: 'POST' });
+      if (!chRes.ok) throw new Error('Failed to get challenge');
+      var chData = await chRes.json();
+      var challenge = chData.challenge;
+
+      // 2. Sign with NIP-07
+      var event = {
+        kind: 27235,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [],
+        content: challenge
+      };
+      var signedEvent = await window.nostr.signEvent(event);
+
+      // 3. Send to login
+      var loginRes = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(signedEvent)
+      });
+      if (!loginRes.ok) {
+        var errText = await loginRes.text();
+        throw new Error(errText);
+      }
+      var loginData = await loginRes.json();
+      token = loginData.token;
+      localStorage.setItem('noscha_admin_session', token);
+      showDashboard();
+    } catch (e) {
+      loginErr.textContent = e.message || 'Login failed';
+      loginBtn.disabled = false;
+    }
+  }
+
+  logoutBtn.addEventListener('click', function() {
     token = '';
-    localStorage.removeItem('noscha_admin_token');
+    localStorage.removeItem('noscha_admin_session');
     dashboard.style.display = 'none';
     loginScreen.style.display = 'block';
-    tokenInput.value = '';
+    loginBtn.disabled = false;
     loginErr.textContent = '';
+    checkNostr();
   });
 
-  function showDashboard(){
+  function showDashboard() {
     loginScreen.style.display = 'none';
     dashboard.style.display = 'block';
     loadStats();
     loadRentals();
+    loadPricing();
   }
 
-  function apiFetch(path, opts){
+  function apiFetch(path, opts) {
     opts = opts || {};
     opts.headers = opts.headers || {};
-    opts.headers['Authorization'] = 'Bearer ' + token;
-    return fetch(path, opts).then(function(r){
-      if(r.status === 401) throw new Error('Unauthorized');
-      if(!r.ok) return r.text().then(function(t){throw new Error(t);});
+    opts.headers['X-Admin-Token'] = token;
+    return fetch(path, opts).then(function(r) {
+      if (r.status === 401) throw new Error('Unauthorized');
+      if (!r.ok) return r.text().then(function(t) { throw new Error(t); });
       var ct = r.headers.get('content-type') || '';
-      if(ct.indexOf('json') !== -1) return r.json();
+      if (ct.indexOf('json') !== -1) return r.json();
       return r.text();
     });
   }
 
-  function loadStats(){
-    apiFetch('/admin/stats').then(function(d){
+  function loadStats() {
+    apiFetch('/api/admin/stats').then(function(d) {
       document.getElementById('s-active').textContent = d.active_rentals;
       document.getElementById('s-expiring').textContent = d.expiring_soon;
       document.getElementById('s-banned').textContent = d.banned_users;
@@ -261,62 +309,103 @@ input[type=password]:focus{border-color:var(--purple)}
     });
   }
 
-  function loadRentals(){
-    var url = '/admin/rentals?page='+currentPage+'&limit='+pageLimit;
-    if(currentFilter) url += '&status='+currentFilter;
-    apiFetch(url).then(function(d){
+  function loadPricing() {
+    apiFetch('/api/admin/pricing').then(function(d) {
+      var periods = ['1d','7d','30d','90d','365d'];
+      var services = ['subdomain','email','nip05','bundle'];
+      periods.forEach(function(p) {
+        services.forEach(function(s) {
+          var el = document.getElementById('p-'+p+'-'+s);
+          if(el && d[p]) el.value = d[p][s] || '';
+        });
+      });
+    });
+  }
+
+  document.getElementById('save-pricing-btn').addEventListener('click', function() {
+    var btn = this;
+    var status = document.getElementById('pricing-status');
+    btn.disabled = true;
+    status.textContent = 'Saving...';
+    var periods = ['1d','7d','30d','90d','365d'];
+    var services = ['subdomain','email','nip05','bundle'];
+    var pricing = {};
+    periods.forEach(function(p) {
+      pricing[p] = {};
+      services.forEach(function(s) {
+        var el = document.getElementById('p-'+p+'-'+s);
+        pricing[p][s] = parseInt(el.value, 10) || 0;
+      });
+    });
+    apiFetch('/api/admin/pricing', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pricing)
+    }).then(function() {
+      status.textContent = 'Saved ✓';
+      status.style.color = 'var(--green)';
+      toast('Pricing updated', 'ok');
+      btn.disabled = false;
+    }).catch(function(e) {
+      status.textContent = 'Error: ' + e.message;
+      status.style.color = 'var(--red)';
+      btn.disabled = false;
+    });
+  });
+
+  function loadRentals() {
+    var url = '/api/admin/rentals?page=' + currentPage + '&limit=' + pageLimit;
+    if (currentFilter) url += '&status=' + currentFilter;
+    apiFetch(url).then(function(d) {
       renderRentals(d.rentals);
       var totalPages = Math.max(1, Math.ceil(d.total / d.limit));
-      pageInfo.textContent = 'Page '+d.page+' / '+totalPages+' ('+d.total+' total)';
+      pageInfo.textContent = 'Page ' + d.page + ' / ' + totalPages + ' (' + d.total + ' total)';
       prevBtn.disabled = d.page <= 1;
       nextBtn.disabled = d.page >= totalPages;
     });
   }
 
-  function renderRentals(list){
-    if(!list.length){
+  function renderRentals(list) {
+    if (!list.length) {
       rentalsBody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted)">No rentals found</td></tr>';
       return;
     }
     var html = '';
-    list.forEach(function(r){
+    list.forEach(function(r) {
       var badgeCls = r.status === 'active' ? 'badge-active' : r.status === 'banned' ? 'badge-banned' : 'badge-expired';
-      if(r.status === 'active' && r.days_remaining <= 3) badgeCls = 'badge-warn';
-      var daysText = r.days_remaining > 0 ? r.days_remaining+'d' : 'expired';
+      if (r.status === 'active' && r.days_remaining <= 3) badgeCls = 'badge-warn';
+      var daysText = r.days_remaining > 0 ? r.days_remaining + 'd' : 'expired';
       var svcs = '';
-      svcs += '<span class="svc-pill'+(r.has_email?' on':'')+'">Email</span>';
-      svcs += '<span class="svc-pill'+(r.has_subdomain?' on':'')+'">DNS</span>';
-      svcs += '<span class="svc-pill'+(r.has_nip05?' on':'')+'">NIP-05</span>';
-
+      svcs += '<span class="svc-pill' + (r.has_email ? ' on' : '') + '">Email</span>';
+      svcs += '<span class="svc-pill' + (r.has_subdomain ? ' on' : '') + '">DNS</span>';
+      svcs += '<span class="svc-pill' + (r.has_nip05 ? ' on' : '') + '">NIP-05</span>';
       var actions = '';
-      if(r.status === 'banned'){
-        actions += '<button class="act-btn act-unban" onclick="doUnban(\''+esc(r.username)+'\')">Unban</button>';
+      if (r.status === 'banned') {
+        actions += '<button class="act-btn act-unban" onclick="doUnban(\'' + esc(r.username) + '\')">Unban</button>';
       } else {
-        if(r.status === 'active'){
-          actions += '<button class="act-btn act-extend" onclick="openExtend(\''+esc(r.username)+'\')">Extend</button>';
-          actions += '<button class="act-btn act-revoke" onclick="doRevoke(\''+esc(r.username)+'\')">Revoke</button>';
+        if (r.status === 'active') {
+          actions += '<button class="act-btn act-extend" onclick="openExtend(\'' + esc(r.username) + '\')">Extend</button>';
+          actions += '<button class="act-btn act-revoke" onclick="doRevoke(\'' + esc(r.username) + '\')">Revoke</button>';
         }
-        actions += '<button class="act-btn act-ban" onclick="doBan(\''+esc(r.username)+'\')">Ban</button>';
+        actions += '<button class="act-btn act-ban" onclick="doBan(\'' + esc(r.username) + '\')">Ban</button>';
       }
-
       html += '<tr>';
-      html += '<td><strong>'+esc(r.username)+'</strong></td>';
-      html += '<td><span class="badge '+badgeCls+'">'+esc(r.status)+'</span></td>';
-      html += '<td>'+esc(r.plan)+'</td>';
-      html += '<td>'+daysText+'</td>';
-      html += '<td>'+svcs+'</td>';
-      html += '<td>'+actions+'</td>';
+      html += '<td><strong>' + esc(r.username) + '</strong></td>';
+      html += '<td><span class="badge ' + badgeCls + '">' + esc(r.status) + '</span></td>';
+      html += '<td>' + esc(r.plan) + '</td>';
+      html += '<td>' + daysText + '</td>';
+      html += '<td>' + svcs + '</td>';
+      html += '<td>' + actions + '</td>';
       html += '</tr>';
     });
     rentalsBody.innerHTML = html;
   }
 
-  function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
-  // Filters
-  document.querySelectorAll('.filter-btn').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      document.querySelectorAll('.filter-btn').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.filter-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
       btn.classList.add('active');
       currentFilter = btn.getAttribute('data-filter');
       currentPage = 1;
@@ -324,66 +413,58 @@ input[type=password]:focus{border-color:var(--purple)}
     });
   });
 
-  // Pagination
-  prevBtn.addEventListener('click', function(){if(currentPage>1){currentPage--;loadRentals();}});
-  nextBtn.addEventListener('click', function(){currentPage++;loadRentals();});
+  prevBtn.addEventListener('click', function() { if (currentPage > 1) { currentPage--; loadRentals(); } });
+  nextBtn.addEventListener('click', function() { currentPage++; loadRentals(); });
 
-  // Actions
-  window.doBan = function(username){
-    if(!confirm('Ban user "'+username+'"? Their services will be stopped.')) return;
-    apiFetch('/admin/ban/'+encodeURIComponent(username),{method:'POST'}).then(function(){
-      toast('Banned: '+username, 'ok');
-      loadStats();loadRentals();
-    }).catch(function(e){toast('Error: '+e.message, 'err');});
+  window.doBan = function(username) {
+    if (!confirm('Ban user "' + username + '"? Their services will be stopped.')) return;
+    apiFetch('/api/admin/ban/' + encodeURIComponent(username), { method: 'POST' }).then(function() {
+      toast('Banned: ' + username, 'ok'); loadStats(); loadRentals();
+    }).catch(function(e) { toast('Error: ' + e.message, 'err'); });
   };
 
-  window.doUnban = function(username){
-    if(!confirm('Unban user "'+username+'"?')) return;
-    apiFetch('/admin/unban/'+encodeURIComponent(username),{method:'POST'}).then(function(){
-      toast('Unbanned: '+username, 'ok');
-      loadStats();loadRentals();
-    }).catch(function(e){toast('Error: '+e.message, 'err');});
+  window.doUnban = function(username) {
+    if (!confirm('Unban user "' + username + '"?')) return;
+    apiFetch('/api/admin/unban/' + encodeURIComponent(username), { method: 'POST' }).then(function() {
+      toast('Unbanned: ' + username, 'ok'); loadStats(); loadRentals();
+    }).catch(function(e) { toast('Error: ' + e.message, 'err'); });
   };
 
-  window.doRevoke = function(username){
-    if(!confirm('Revoke rental for "'+username+'"? Services will be stopped immediately.')) return;
-    apiFetch('/admin/revoke/'+encodeURIComponent(username),{method:'POST'}).then(function(){
-      toast('Revoked: '+username, 'ok');
-      loadStats();loadRentals();
-    }).catch(function(e){toast('Error: '+e.message, 'err');});
+  window.doRevoke = function(username) {
+    if (!confirm('Revoke rental for "' + username + '"? Services will be stopped immediately.')) return;
+    apiFetch('/api/admin/revoke/' + encodeURIComponent(username), { method: 'POST' }).then(function() {
+      toast('Revoked: ' + username, 'ok'); loadStats(); loadRentals();
+    }).catch(function(e) { toast('Error: ' + e.message, 'err'); });
   };
 
-  window.openExtend = function(username){
+  window.openExtend = function(username) {
     document.getElementById('extend-user').textContent = username;
     document.getElementById('extend-days').value = 30;
     document.getElementById('extend-modal').classList.add('open');
-    document.getElementById('extend-confirm').onclick = function(){
+    document.getElementById('extend-confirm').onclick = function() {
       var days = parseInt(document.getElementById('extend-days').value, 10);
-      if(!days || days < 1 || days > 365){toast('Days must be 1-365','err');return;}
-      apiFetch('/admin/extend/'+encodeURIComponent(username),{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({days:days})
-      }).then(function(){
-        closeModal();
-        toast('Extended '+username+' by '+days+' days', 'ok');
-        loadStats();loadRentals();
-      }).catch(function(e){toast('Error: '+e.message, 'err');});
+      if (!days || days < 1 || days > 365) { toast('Days must be 1-365', 'err'); return; }
+      apiFetch('/api/admin/extend/' + encodeURIComponent(username), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: days })
+      }).then(function() {
+        closeModal(); toast('Extended ' + username + ' by ' + days + ' days', 'ok'); loadStats(); loadRentals();
+      }).catch(function(e) { toast('Error: ' + e.message, 'err'); });
     };
   };
 
-  window.closeModal = function(){
+  window.closeModal = function() {
     document.getElementById('extend-modal').classList.remove('open');
   };
 
-  // Toast
   var toastTimer;
-  function toast(msg, type){
+  function toast(msg, type) {
     var el = document.getElementById('toast');
     el.textContent = msg;
-    el.className = 'toast show '+(type||'');
+    el.className = 'toast show ' + (type || '');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function(){el.className='toast';}, 3000);
+    toastTimer = setTimeout(function() { el.className = 'toast'; }, 3000);
   }
 })();
 </script>

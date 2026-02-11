@@ -129,11 +129,9 @@ input:focus{border-color:var(--purple)}
       <h2>Pricing (per service)</h2>
       <table class="pricing-table">
         <tr><th>Duration</th><th>Subdomain</th><th>Email</th><th>NIP-05</th><th style="color:var(--green)">All-in Bundle</th></tr>
-        <tr><td>1 day</td><td class="price">500</td><td class="price">1,500</td><td class="price">200</td><td class="price" style="color:var(--green)">1,800</td></tr>
-        <tr><td>1 week</td><td class="price">1,000</td><td class="price">2,500</td><td class="price">500</td><td class="price" style="color:var(--green)">3,300</td></tr>
-        <tr><td>1 month</td><td class="price">2,000</td><td class="price">5,000</td><td class="price">1,000</td><td class="price" style="color:var(--green)">6,500</td></tr>
-        <tr><td>3 months</td><td class="price">5,000</td><td class="price">12,000</td><td class="price">2,500</td><td class="price" style="color:var(--green)">16,000</td></tr>
-        <tr><td>1 year</td><td class="price">15,000</td><td class="price">40,000</td><td class="price">8,000</td><td class="price" style="color:var(--green)">50,000</td></tr>
+        <tbody id="pricing-body">
+        <tr><td colspan="5" style="text-align:center;color:var(--muted)">Loading prices...</td></tr>
+        </tbody>
       </table>
       <p style="font-size:.75rem;color:var(--muted);margin-top:.5rem">* All prices in sats. Select all 3 services for the bundle discount.</p>
     </div>
@@ -261,14 +259,32 @@ input:focus{border-color:var(--purple)}
   var currentOrderId = null;
   var currentManagementToken = null;
 
-  // Pricing tables
-  var PRICES = {
-    '1d':   {subdomain:500, email:1500, nip05:200, bundle:1800},
-    '7d':   {subdomain:1000, email:2500, nip05:500, bundle:3300},
-    '30d':  {subdomain:2000, email:5000, nip05:1000, bundle:6500},
-    '90d':  {subdomain:5000, email:12000, nip05:2500, bundle:16000},
-    '365d': {subdomain:15000, email:40000, nip05:8000, bundle:50000},
-  };
+  // Pricing tables (loaded dynamically)
+  var PRICES = {};
+
+  // Load pricing from API
+  fetch('/api/pricing').then(function(r){return r.json();}).then(function(d){
+    PRICES = d;
+    renderPricingTable(d);
+    calcTotal();
+  });
+
+  function renderPricingTable(prices) {
+    var labels = {'1d':'1 day','7d':'1 week','30d':'1 month','90d':'3 months','365d':'1 year'};
+    var periods = ['1d','7d','30d','90d','365d'];
+    var body = document.getElementById('pricing-body');
+    var html = '';
+    periods.forEach(function(p) {
+      var pr = prices[p] || {};
+      html += '<tr><td>'+labels[p]+'</td>';
+      html += '<td class="price">'+(pr.subdomain||0).toLocaleString()+'</td>';
+      html += '<td class="price">'+(pr.email||0).toLocaleString()+'</td>';
+      html += '<td class="price">'+(pr.nip05||0).toLocaleString()+'</td>';
+      html += '<td class="price" style="color:var(--green)">'+(pr.bundle||0).toLocaleString()+'</td>';
+      html += '</tr>';
+    });
+    body.innerHTML = html;
+  }
 
   function calcTotal(){
     var plan = document.querySelector('input[name=plan]:checked').value;

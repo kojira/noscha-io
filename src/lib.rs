@@ -22,8 +22,10 @@ use worker::*;
 
 #[cfg(target_arch = "wasm32")]
 use admin::{
-    handle_admin_ban, handle_admin_extend, handle_admin_page, handle_admin_rentals,
-    handle_admin_revoke, handle_admin_stats, handle_admin_unban,
+    handle_admin_ban, handle_admin_challenge, handle_admin_extend, handle_admin_login,
+    handle_admin_page, handle_admin_pricing_get, handle_admin_pricing_put,
+    handle_admin_rentals, handle_admin_revoke, handle_admin_stats, handle_admin_unban,
+    handle_public_pricing,
 };
 #[cfg(target_arch = "wasm32")]
 use dns::DnsRecordType;
@@ -177,7 +179,8 @@ async fn handle_create_order(
 
     let order_id = generate_order_id();
     let service_types = services_from_request(&body.services);
-    let amount_sats = Plan::calculate_total(&body.plan, &service_types);
+    let pricing = admin::load_pricing(&bucket).await;
+    let amount_sats = Plan::calculate_total_dynamic(&body.plan, &service_types, &pricing);
     let webhook_secret = generate_webhook_secret();
     let domain = ctx
         .env
@@ -655,7 +658,8 @@ async fn handle_renew(
     };
 
     let order_id = generate_order_id();
-    let amount_sats = Plan::calculate_total(&body.plan, &service_types);
+    let pricing = admin::load_pricing(&bucket).await;
+    let amount_sats = Plan::calculate_total_dynamic(&body.plan, &service_types, &pricing);
     let webhook_secret = generate_webhook_secret();
     let domain = ctx
         .env
@@ -1068,16 +1072,21 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/webhook/coinos", handle_coinos_webhook)
         .post_async("/api/renew", handle_renew)
         .get_async("/my/:token", handle_my_page)
+        .get_async("/api/pricing", handle_public_pricing)
         .get_async("/.well-known/nostr.json", handle_nip05)
         .options_async("/.well-known/nostr.json", handle_nip05_options)
         // Admin routes
         .get_async("/admin", handle_admin_page)
-        .get_async("/admin/rentals", handle_admin_rentals)
-        .get_async("/admin/stats", handle_admin_stats)
-        .post_async("/admin/ban/:username", handle_admin_ban)
-        .post_async("/admin/unban/:username", handle_admin_unban)
-        .post_async("/admin/extend/:username", handle_admin_extend)
-        .post_async("/admin/revoke/:username", handle_admin_revoke)
+        .post_async("/api/admin/challenge", handle_admin_challenge)
+        .post_async("/api/admin/login", handle_admin_login)
+        .get_async("/api/admin/rentals", handle_admin_rentals)
+        .get_async("/api/admin/stats", handle_admin_stats)
+        .get_async("/api/admin/pricing", handle_admin_pricing_get)
+        .put_async("/api/admin/pricing", handle_admin_pricing_put)
+        .post_async("/api/admin/ban/:username", handle_admin_ban)
+        .post_async("/api/admin/unban/:username", handle_admin_unban)
+        .post_async("/api/admin/extend/:username", handle_admin_extend)
+        .post_async("/api/admin/revoke/:username", handle_admin_revoke)
         .run(req, env)
         .await
 }
