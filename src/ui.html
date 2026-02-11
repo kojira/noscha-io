@@ -255,6 +255,19 @@ input:focus{border-color:var(--purple)}
   </div>
 </div>
 
+<!-- Donate Section -->
+<div class="container" style="padding-top:0">
+  <div class="section" style="text-align:center;padding:1.5rem">
+    <h2 style="font-size:1.1rem;margin-bottom:.75rem">⚡ Support noscha.io</h2>
+    <p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem">Help keep this service running with a Lightning donation</p>
+    <div id="donate-qr" style="display:inline-block;padding:8px;background:#fff;border-radius:8px;margin-bottom:.75rem"></div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:.5rem;margin-top:.5rem">
+      <code style="font-size:.8rem;color:var(--orange);background:var(--bg);padding:.4rem .75rem;border-radius:6px;border:1px solid var(--border)">nostarou@coinos.io</code>
+      <button id="donate-copy-btn" style="padding:.4rem .75rem;font-size:.75rem;background:var(--purple-dim);color:#fff;border:none;border-radius:6px;cursor:pointer;transition:background .2s">Copy</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script>
 (function(){
@@ -516,6 +529,23 @@ input:focus{border-color:var(--purple)}
     payScreen.style.display = 'none';
     orderBtn.disabled = false;
     orderBtn.textContent = 'Pay with Lightning';
+  });
+})();
+
+// Donate QR + copy
+(function(){
+  new QRCode(document.getElementById('donate-qr'), {
+    text: 'lightning:nostarou@coinos.io',
+    width: 140, height: 140,
+    colorDark: '#000', colorLight: '#fff',
+    correctLevel: QRCode.CorrectLevel.M
+  });
+  document.getElementById('donate-copy-btn').addEventListener('click', function(){
+    var btn = this;
+    navigator.clipboard.writeText('nostarou@coinos.io').then(function(){
+      btn.textContent = 'Copied!';
+      setTimeout(function(){ btn.textContent = 'Copy'; }, 1500);
+    });
   });
 })();
 </script>
