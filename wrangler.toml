@@ -29,6 +29,9 @@ DOMAIN = "noscha.io"
 # Note: Email handler is in JS shim (src/email_shim.js) since worker-rs doesn't support email events
 # Configure in Cloudflare Dashboard: Email Routing > Catch-all > Send to Worker
 
+[triggers]
+crons = ["*/15 * * * *"]
+
 [env.staging]
 name = "noscha-io-staging"
 routes = [
@@ -46,3 +49,6 @@ REQUIRE_AUTH = "true"
 [[env.staging.r2_buckets]]
 binding = "BUCKET"
 bucket_name = "noscha-data-staging"
+
+[env.staging.triggers]
+crons = ["*/15 * * * *"]

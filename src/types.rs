@@ -116,6 +116,8 @@ impl Plan {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderStatus {
+    #[serde(rename = "webhook_pending")]
+    WebhookPending,
     Pending,
     Paid,
     Provisioned,
@@ -148,6 +150,12 @@ pub struct Order {
     /// If set, this order is a renewal for an existing rental
     #[serde(skip_serializing_if = "Option::is_none")]
     pub renewal_for: Option<String>,
+    /// Webhook URL for notifications
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_url: Option<String>,
+    /// Webhook challenge token for verification
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_challenge: Option<String>,
 }
 
 /// Services requested in an order
@@ -163,7 +171,8 @@ pub struct OrderServicesRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderEmailRequest {
-    pub forward_to: String,
+    #[serde(default)]
+    pub forward_to: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,6 +194,7 @@ pub struct OrderNip05Request {
 pub struct OrderRequest {
     pub username: String,
     pub plan: Plan,
+    pub webhook_url: String,
     #[serde(default)]
     pub services: Option<OrderServicesRequest>,
 }
@@ -198,6 +208,10 @@ pub struct OrderResponse {
     pub expires_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub management_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<OrderStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// GET /api/check/{username} response
@@ -271,6 +285,19 @@ pub struct Rental {
     pub services: RentalServices,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub management_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub webhook_url: Option<String>,
+}
+
+/// Webhook verification stored in R2 at verify/{token}.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebhookVerification {
+    pub token: String,
+    pub order_id: String,
+    pub webhook_url: String,
+    pub verified: bool,
+    pub created_at: String,
+    pub expires_at: String,
 }
 
 /// POST /api/renew request body

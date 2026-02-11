@@ -147,11 +147,213 @@ async function isAuthenticated(request, env) {
   }
 }
 
+/**
+ * Find rental by management token by scanning R2
+ */
+async function findRentalByManagementToken(bucket, managementToken) {
+  const list = await bucket.list({ prefix: 'rentals/' });
+
+  for (const obj of list.objects) {
+    try {
+      const rental = JSON.parse(await bucket.get(obj.key).then(r => r?.text()));
+      if (rental && rental.management_token === managementToken) {
+        return { rental, key: obj.key };
+      }
+    } catch (e) {
+      console.error(`Error reading rental ${obj.key}: ${e.message}`);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Handle GET /api/mail/{token} - Get email from inbox and mark as read
+ */
+async function handleGetMail(request, env, token) {
+  try {
+    const key = `inbox/${token}.json`;
+    const obj = await env.BUCKET.get(key);
+
+    if (!obj) {
+      return new Response(JSON.stringify({ error: "Email not found" }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const emailData = JSON.parse(await obj.text());
+
+    // Mark as read on first access
+    if (!emailData.read_at) {
+      emailData.read_at = new Date().toISOString();
+      await env.BUCKET.put(key, JSON.stringify(emailData));
+    }
+
+    return new Response(JSON.stringify(emailData), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: "Failed to retrieve email" }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+/**
+ * Handle POST /api/mail/send/{management_token} - Send email via Resend with rate limits
+ */
+async function handleSendMail(request, env, managementToken) {
+  try {
+    const rentalResult = await findRentalByManagementToken(env.BUCKET, managementToken);
+    if (!rentalResult) {
+      return new Response(JSON.stringify({ error: "Invalid management token" }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const { rental, key } = rentalResult;
+    const username = key.split('/')[1].replace('.json', '');
+
+    // Check if rental is active and not expired
+    if (rental.status !== "active") {
+      return new Response(JSON.stringify({ error: "Address not active" }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const now = new Date();
+    const expires = new Date(rental.expires_at);
+    if (now > expires) {
+      return new Response(JSON.stringify({ error: "Address expired" }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Check email service is enabled
+    if (!rental.services?.email?.enabled) {
+      return new Response(JSON.stringify({ error: "Email service not enabled" }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Rate limit: 5 emails per 24 hours per user
+    const DAILY_LIMIT = 5;
+    const WINDOW_MS = 24 * 60 * 60 * 1000;
+    const countKey = `emails/${username}.json`;
+    let emailCount = { count: 0, window_start: now.toISOString() };
+    try {
+      const countObj = await env.BUCKET.get(countKey);
+      if (countObj) {
+        emailCount = JSON.parse(await countObj.text());
+        const windowStart = new Date(emailCount.window_start);
+        if (now - windowStart >= WINDOW_MS) {
+          emailCount = { count: 0, window_start: now.toISOString() };
+        }
+      }
+    } catch (e) {
+      console.error(`Rate limit check error: ${e.message}`);
+    }
+
+    if (emailCount.count >= DAILY_LIMIT) {
+      return new Response(JSON.stringify({ error: "Daily email limit reached (5/day)" }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Parse request body
+    const body = await request.json();
+    const { to, subject, body: emailBody } = body;
+
+    if (!to || !subject || !emailBody) {
+      return new Response(JSON.stringify({ error: "Missing required fields: to, subject, body" }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Send via Resend
+    const apiKey = env.RESEND_API_KEY;
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "Email service temporarily unavailable" }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    const fromAddr = `${username}@noscha.io`;
+
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromAddr,
+        to: [to],
+        subject: subject,
+        text: emailBody,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Resend API error: ${res.status} ${errText}`);
+      return new Response(JSON.stringify({ error: "Failed to send email" }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Increment email count after successful send
+    emailCount.count += 1;
+    try {
+      await env.BUCKET.put(countKey, JSON.stringify(emailCount));
+    } catch (e) {
+      console.error(`Failed to update email count: ${e.message}`);
+    }
+
+    const result = await res.json();
+    return new Response(JSON.stringify({ success: true, message_id: result.id }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: "Invalid request: " + e.message }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
 // Create a subclass that adds the email handler and auth gate
 class UnifiedWorker extends WorkerClass {
   async fetch(request) {
     const url = new URL(request.url);
     const requireAuth = this.env.REQUIRE_AUTH === 'true';
+
+    // Handle new email API routes
+    if (url.pathname.startsWith('/api/mail/')) {
+      const pathParts = url.pathname.split('/');
+
+      // GET /api/mail/{token}
+      if (request.method === 'GET' && pathParts.length === 4 && pathParts[3]) {
+        const token = pathParts[3];
+        return handleGetMail(request, this.env, token);
+      }
+
+      // POST /api/mail/send/{management_token}
+      if (request.method === 'POST' && pathParts.length === 5 && pathParts[3] === 'send' && pathParts[4]) {
+        const managementToken = pathParts[4];
+        return handleSendMail(request, this.env, managementToken);
+      }
+    }
 
     if (requireAuth) {
       // POST /api/auth/verify — always allowed (auth endpoint)
@@ -185,6 +387,50 @@ class UnifiedWorker extends WorkerClass {
 
   async email(message) {
     return emailShim.email(message, this.env, this.ctx);
+  }
+
+  async scheduled(controller) {
+    // Cleanup old emails from inbox
+    try {
+      const list = await this.env.BUCKET.list({ prefix: 'inbox/' });
+      const now = new Date();
+
+      for (const obj of list.objects) {
+        try {
+          const email = JSON.parse(await this.env.BUCKET.get(obj.key).then(r => r?.text()));
+          if (!email) continue;
+
+          const createdAt = new Date(email.created_at);
+          const readAt = email.read_at ? new Date(email.read_at) : null;
+
+          let shouldDelete = false;
+
+          // Delete if read and 1 hour has passed since read
+          if (readAt && (now - readAt) >= 60 * 60 * 1000) {
+            shouldDelete = true;
+          }
+
+          // Delete if unread and 24 hours have passed since created
+          if (!readAt && (now - createdAt) >= 24 * 60 * 60 * 1000) {
+            shouldDelete = true;
+          }
+
+          if (shouldDelete) {
+            await this.env.BUCKET.delete(obj.key);
+            console.log(`Deleted old email: ${obj.key}`);
+          }
+        } catch (e) {
+          console.error(`Error processing email ${obj.key}: ${e.message}`);
+        }
+      }
+    } catch (e) {
+      console.error(`Email cleanup error: ${e.message}`);
+    }
+
+    // Call parent scheduled method if it exists
+    if (super.scheduled) {
+      await super.scheduled(controller);
+    }
   }
 }
 

@@ -171,6 +171,7 @@ mod tests {
                 nip05: None,
             },
             management_token: None,
+            webhook_url: None,
         }
     }
 
@@ -215,6 +216,7 @@ mod tests {
                 nip05: None,
             },
             management_token: None,
+            webhook_url: None,
         };
         assert_eq!(lookup_forward_address(&rental), None);
     }

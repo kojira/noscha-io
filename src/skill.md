@@ -19,7 +19,7 @@ GET /api/check/{username}
 {"available": true, "username": "alice"}
 ```
 
-### Step 2: Create order & get Lightning invoice
+### Step 2: Create order (webhook verification required)
 
 ```
 POST /api/order
@@ -28,8 +28,9 @@ Content-Type: application/json
 {
   "username": "alice",
   "plan": "30d",
+  "webhook_url": "https://your-server.com/webhook",
   "services": {
-    "email": {"forward_to": "real@example.com"},
+    "email": {},
     "subdomain": {"type": "CNAME", "target": "mysite.example.com", "proxied": false},
     "nip05": {"pubkey": "abc123...hex"}
   }
@@ -41,12 +42,37 @@ Content-Type: application/json
 {
   "order_id": "ord_18f3a...",
   "amount_sats": 6500,
-  "bolt11": "lnbc65000n1p...",
-  "expires_at": "2026-02-11T12:15:00Z"
+  "bolt11": "",
+  "expires_at": "2026-02-11T12:15:00Z",
+  "status": "webhook_pending",
+  "message": "Check your webhook for the challenge URL. Visit it to confirm and get an invoice."
 }
 ```
 
-You can include any combination of services (`email`, `subdomain`, `nip05`). Omit any you don't need.
+A challenge POST is sent to your `webhook_url`:
+```json
+{"event": "webhook_challenge", "challenge_url": "https://noscha.io/api/order/{order_id}/confirm/{challenge}", "order_id": "ord_18f3a..."}
+```
+
+### Step 2b: Confirm webhook & get invoice
+
+Visit the `challenge_url` from the webhook (GET request):
+```
+GET /api/order/{order_id}/confirm/{challenge}
+```
+
+**Response:**
+```json
+{
+  "order_id": "ord_18f3a...",
+  "amount_sats": 6500,
+  "bolt11": "lnbc65000n1p...",
+  "expires_at": "2026-02-11T12:15:00Z",
+  "status": "pending"
+}
+```
+
+You can include any combination of services (`email`, `subdomain`, `nip05`). `webhook_url` is **required** for all orders — email notifications are delivered via webhook.
 
 ### Step 3: Pay the invoice & poll for status
 
@@ -107,6 +133,28 @@ Health check. Returns `{"status": "ok", "version": "..."}`.
 
 ### GET /.well-known/nostr.json?name={username}
 NIP-05 verification endpoint (Nostr protocol).
+
+### GET /api/mail/{token}
+Retrieve an email from the inbox using the token received via webhook notification.
+- **token**: Random UUID token from the webhook notification URL
+- Returns the email data including from, to, subject, body_text, body_html, date, etc.
+- Marks the email as read (sets read_at timestamp) on first access
+- Returns 404 if email not found
+
+### POST /api/mail/send/{management_token}
+Send an email via Resend API from your noscha.io email address.
+- **management_token**: Your rental's management token for authentication
+- **Body**: `{"to": "recipient@example.com", "subject": "Subject", "body": "Email content"}`
+- Rate limited to 5 emails per 24 hours per account
+- From address will be `{username}@noscha.io`
+- Returns `{"success": true, "message_id": "resend_message_id"}` on success
+
+### PUT /api/settings/{management_token}
+Update rental settings, currently supports setting webhook URL for email notifications.
+- **management_token**: Your rental's management token for authentication
+- **Body**: `{"webhook_url": "https://your-server.com/webhook"}` (or null to disable)
+- When webhook_url is set, incoming emails will trigger a POST to this URL instead of forwarding via Resend
+- Webhook payload: `{"event": "email_received", "from": "sender@example.com", "to": "you@noscha.io", "subject": "...", "url": "https://noscha.io/api/mail/{token}", "received_at": "2026-02-11T..."}`
 
 ## Pricing (sats, Lightning Network)
 

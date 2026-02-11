@@ -222,11 +222,21 @@ async fn handle_create_order(
         return Response::error(err, 400);
     }
 
+    // Validate webhook_url
+    if body.webhook_url.is_empty() {
+        return Response::error("webhook_url is required", 400);
+    }
+    if !body.webhook_url.starts_with("https://") && !body.webhook_url.starts_with("http://") {
+        return Response::error("webhook_url must be a valid HTTP(S) URL", 400);
+    }
+
     // Validate forward_to email if email service is requested
     if let Some(ref services) = body.services {
         if let Some(ref email_req) = services.email {
-            if let Err(err) = validation::validate_forward_email(&email_req.forward_to) {
-                return Response::error(format!("Invalid forwarding email: {}", err), 400);
+            if let Some(ref fwd) = email_req.forward_to {
+                if let Err(err) = validation::validate_forward_email(fwd) {
+                    return Response::error(format!("Invalid forwarding email: {}", err), 400);
+                }
             }
         }
     }
@@ -248,24 +258,16 @@ async fn handle_create_order(
     let service_types = services_from_request(&body.services);
     let pricing = admin::load_pricing(&bucket).await;
     let amount_sats = Plan::calculate_total_dynamic(&body.plan, &service_types, &pricing);
-    let webhook_secret = generate_webhook_secret();
     let domain = ctx
         .env
         .var("DOMAIN")
         .map(|v| v.to_string())
         .unwrap_or_else(|_| "noscha.io".to_string());
-    let webhook_url = format!("https://{}/api/webhook/coinos", domain);
 
-    // Create invoice (mock or real)
-    let is_mock = coinos_mock::is_mock_enabled(&ctx.env);
-    let invoice = if is_mock {
-        coinos_mock::create_mock_invoice(amount_sats, &webhook_url, &webhook_secret).await?
-    } else {
-        let api_token = ctx.env.secret("COINOS_API_TOKEN")?.to_string();
-        coinos::create_invoice(&api_token, amount_sats, &webhook_url, &webhook_secret).await?
-    };
+    // Generate webhook challenge token
+    let challenge = format!("ch_{:x}_{:x}", js_sys::Date::now() as u64, (js_sys::Math::random() * 1e12) as u64);
 
-    // Calculate expiry (15 min for invoice)
+    // Calculate expiry (15 min)
     let now = js_sys::Date::now();
     let expires_ms = now + 15.0 * 60.0 * 1000.0;
     let created_at = js_sys::Date::new_0();
@@ -276,19 +278,17 @@ async fn handle_create_order(
         username: body.username.clone(),
         plan: body.plan,
         amount_sats,
-        bolt11: invoice.text.clone(),
-        status: if is_mock {
-            OrderStatus::Paid
-        } else {
-            OrderStatus::Pending
-        },
+        bolt11: String::new(),
+        status: OrderStatus::WebhookPending,
         created_at: created_at.to_iso_string().as_string().unwrap_or_default(),
         expires_at: expires_at.to_iso_string().as_string().unwrap_or_default(),
-        coinos_invoice_hash: invoice.hash,
-        webhook_secret: Some(webhook_secret),
+        coinos_invoice_hash: None,
+        webhook_secret: None,
         services_requested: body.services,
         management_token: None,
         renewal_for: None,
+        webhook_url: Some(body.webhook_url.clone()),
+        webhook_challenge: Some(challenge.clone()),
     };
 
     // Save order to R2
@@ -297,40 +297,117 @@ async fn handle_create_order(
         serde_json::to_string(&order).map_err(|e| Error::RustError(e.to_string()))?;
     bucket.put(&order_key, order_json).execute().await?;
 
-    // Capture response fields before potential move
-    let resp_order_id = order.order_id.clone();
-    let resp_amount_sats = order.amount_sats;
-    let resp_bolt11 = order.bolt11.clone();
-    let resp_expires_at = order.expires_at.clone();
+    // Send challenge to webhook_url (best effort)
+    let challenge_url = format!("https://{}/api/order/{}/confirm/{}", domain, order_id, challenge);
+    let challenge_body = serde_json::json!({
+        "event": "webhook_challenge",
+        "challenge_url": challenge_url,
+        "order_id": order_id,
+    });
+    let mut headers = Headers::new();
+    let _ = headers.set("Content-Type", "application/json");
+    let challenge_req = Request::new_with_init(
+        &body.webhook_url,
+        RequestInit::new()
+            .with_method(Method::Post)
+            .with_headers(headers)
+            .with_body(Some(wasm_bindgen::JsValue::from_str(&challenge_body.to_string()))),
+    );
+    if let Ok(r) = challenge_req {
+        let _ = Fetch::Request(r).send().await;
+    }
 
-    // In mock mode, provision immediately (webhook won't be called)
+    Response::from_json(&OrderResponse {
+        order_id: order.order_id,
+        amount_sats: order.amount_sats,
+        bolt11: String::new(),
+        expires_at: order.expires_at,
+        management_token: None,
+        status: Some(OrderStatus::WebhookPending),
+        message: Some("Check your webhook for the challenge URL. Visit it to confirm and get an invoice.".to_string()),
+    })
+}
+
+/// GET /api/order/{order_id}/confirm/{challenge} — webhook verification, then create invoice
+#[cfg(target_arch = "wasm32")]
+async fn handle_confirm_webhook(
+    _req: Request,
+    ctx: RouteContext<()>,
+) -> Result<Response> {
+    let order_id = ctx.param("order_id").unwrap();
+    let challenge = ctx.param("challenge").unwrap();
+
+    let bucket = ctx.env.bucket("BUCKET")?;
+    let order_key = format!("orders/{}.json", order_id);
+    let obj = bucket.get(&order_key).execute().await?;
+
+    let obj = match obj {
+        Some(o) => o,
+        None => return Response::error("Order not found", 404),
+    };
+
+    let text = obj.body().unwrap().text().await?;
+    let mut order: Order = serde_json::from_str(&text)
+        .map_err(|e| Error::RustError(e.to_string()))?;
+
+    // Must be in WebhookPending state
+    if order.status != OrderStatus::WebhookPending {
+        return Response::error("Order is not pending webhook verification", 400);
+    }
+
+    // Verify challenge
+    if order.webhook_challenge.as_deref() != Some(challenge) {
+        return Response::error("Invalid challenge token", 403);
+    }
+
+    // Check expiry
+    let now_ms = js_sys::Date::now();
+    let expires_date = js_sys::Date::new(&order.expires_at.clone().into());
+    if expires_date.get_time() < now_ms {
+        return Response::error("Order expired", 410);
+    }
+
+    // Challenge verified! Now create the Lightning invoice
+    let domain = ctx
+        .env
+        .var("DOMAIN")
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| "noscha.io".to_string());
+    let webhook_secret = generate_webhook_secret();
+    let coinos_webhook_url = format!("https://{}/api/webhook/coinos", domain);
+
+    let is_mock = coinos_mock::is_mock_enabled(&ctx.env);
+    let invoice = if is_mock {
+        coinos_mock::create_mock_invoice(order.amount_sats, &coinos_webhook_url, &webhook_secret).await?
+    } else {
+        let api_token = ctx.env.secret("COINOS_API_TOKEN")?.to_string();
+        coinos::create_invoice(&api_token, order.amount_sats, &coinos_webhook_url, &webhook_secret).await?
+    };
+
+    // Update order
+    order.bolt11 = invoice.text.clone();
+    order.coinos_invoice_hash = invoice.hash;
+    order.webhook_secret = Some(webhook_secret);
+    if is_mock {
+        order.status = OrderStatus::Paid;
+    } else {
+        order.status = OrderStatus::Pending;
+    }
+
+    // In mock mode, provision immediately
     let mut mgmt_token: Option<String> = None;
     if is_mock {
-        let now_ms = js_sys::Date::now();
         let duration_ms = order.plan.duration_days() as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
         let rental_expires_ms = now_ms + duration_ms;
         let rental_expires_date = js_sys::Date::new(&(rental_expires_ms.into()));
-        let rental_expires_at = rental_expires_date
-            .to_iso_string()
-            .as_string()
-            .unwrap_or_default();
+        let rental_expires_at = rental_expires_date.to_iso_string().as_string().unwrap_or_default();
         let now_date = js_sys::Date::new_0();
-        let now_iso = now_date
-            .to_iso_string()
-            .as_string()
-            .unwrap_or_default();
+        let now_iso = now_date.to_iso_string().as_string().unwrap_or_default();
 
-        // Provision DNS if subdomain requested
         let mut subdomain_service: Option<SubdomainService> = None;
         if let Some(ref services) = order.services_requested {
             if let Some(ref sub_req) = services.subdomain {
-                let record_id = provision_dns(
-                    &ctx.env,
-                    &order.username,
-                    sub_req,
-                    &rental_expires_at,
-                )
-                .await?;
+                let record_id = provision_dns(&ctx.env, &order.username, sub_req, &rental_expires_at).await?;
                 subdomain_service = Some(SubdomainService {
                     enabled: true,
                     record_type: sub_req.record_type.clone(),
@@ -344,7 +421,7 @@ async fn handle_create_order(
         let email_service = order.services_requested.as_ref().and_then(|s| {
             s.email.as_ref().map(|e| EmailService {
                 enabled: true,
-                forward_to: e.forward_to.clone(),
+                forward_to: e.forward_to.clone().unwrap_or_default(),
                 cf_rule_id: None,
             })
         });
@@ -371,28 +448,28 @@ async fn handle_create_order(
                 nip05: nip05_service,
             },
             management_token: Some(token),
+            webhook_url: order.webhook_url.clone(),
         };
 
         let rental_key = format!("rentals/{}.json", order.username);
-        let rental_json = serde_json::to_string(&rental)
-            .map_err(|e| Error::RustError(e.to_string()))?;
+        let rental_json = serde_json::to_string(&rental).map_err(|e| Error::RustError(e.to_string()))?;
         bucket.put(&rental_key, rental_json).execute().await?;
 
-        // Update order to Provisioned
-        let mut order = order;
         order.status = OrderStatus::Provisioned;
         order.management_token = mgmt_token.clone();
-        let updated_json = serde_json::to_string(&order)
-            .map_err(|e| Error::RustError(e.to_string()))?;
-        bucket.put(&order_key, updated_json).execute().await?;
     }
 
+    let updated_json = serde_json::to_string(&order).map_err(|e| Error::RustError(e.to_string()))?;
+    bucket.put(&order_key, updated_json).execute().await?;
+
     Response::from_json(&OrderResponse {
-        order_id: resp_order_id,
-        amount_sats: resp_amount_sats,
-        bolt11: resp_bolt11,
-        expires_at: resp_expires_at,
+        order_id: order.order_id,
+        amount_sats: order.amount_sats,
+        bolt11: order.bolt11,
+        expires_at: order.expires_at,
         management_token: mgmt_token,
+        status: Some(order.status),
+        message: None,
     })
 }
 
@@ -631,7 +708,7 @@ async fn handle_coinos_webhook(
                         order.services_requested.as_ref().and_then(|s| {
                             s.email.as_ref().map(|e| EmailService {
                                 enabled: true,
-                                forward_to: e.forward_to.clone(),
+                                forward_to: e.forward_to.clone().unwrap_or_default(),
                                 cf_rule_id: None,
                             })
                         });
@@ -656,6 +733,7 @@ async fn handle_coinos_webhook(
                             nip05: nip05_service,
                         },
                         management_token: Some(format!("mgmt_{:x}", js_sys::Date::now() as u64)),
+                        webhook_url: order.webhook_url.clone(),
                     };
 
                     // Save rental to R2
@@ -770,6 +848,8 @@ async fn handle_renew(
         services_requested: None,
         management_token: None,
         renewal_for: Some(rental.username.clone()),
+        webhook_url: rental.webhook_url.clone(),
+        webhook_challenge: None,
     };
 
     // Save order to R2
@@ -1187,6 +1267,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         })
         .get_async("/api/check/:username", handle_check_username)
         .post_async("/api/order", handle_create_order)
+        .get_async("/api/order/:order_id/confirm/:challenge", handle_confirm_webhook)
         .get_async("/api/order/:order_id/status", handle_order_status)
         .post_async("/api/webhook/coinos", handle_coinos_webhook)
         .post_async("/api/renew", handle_renew)
