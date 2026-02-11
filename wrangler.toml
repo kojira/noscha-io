@@ -1,5 +1,5 @@
 name = "noscha-io"
-main = "build/worker/shim.mjs"
+main = "worker-entry.mjs"
 compatibility_date = "2024-01-01"
 workers_dev = true
 routes = [
@@ -9,6 +9,9 @@ routes = [
 
 [build]
 command = "cargo install -q worker-build && worker-build --release"
+
+# Email routing trigger - makes this worker appear in Email Routing worker list
+[[email_triggers]]
 
 [[r2_buckets]]
 binding = "BUCKET"
