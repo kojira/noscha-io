@@ -70,6 +70,9 @@ pub struct Order {
     /// Management token for user self-service
     #[serde(skip_serializing_if = "Option::is_none")]
     pub management_token: Option<String>,
+    /// If set, this order is a renewal for an existing rental
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_for: Option<String>,
 }
 
 /// Services requested in an order
@@ -193,6 +196,22 @@ pub struct Rental {
     pub services: RentalServices,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub management_token: Option<String>,
+}
+
+/// POST /api/renew request body
+#[derive(Debug, Deserialize)]
+pub struct RenewRequest {
+    pub management_token: String,
+    pub plan: Plan,
+}
+
+/// POST /api/renew response
+#[derive(Debug, Serialize)]
+pub struct RenewResponse {
+    pub order_id: String,
+    pub amount_sats: u64,
+    pub bolt11: String,
+    pub expires_at: String,
 }
 
 /// Coinos webhook payload

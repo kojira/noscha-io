@@ -181,6 +181,7 @@ async fn handle_create_order(
         webhook_secret: Some(webhook_secret),
         services_requested: body.services,
         management_token: None,
+        renewal_for: None,
     };
 
     // Save order to R2
@@ -438,10 +439,51 @@ async fn handle_coinos_webhook(
                     order.status = OrderStatus::Paid;
                     order.coinos_invoice_hash = Some(hash.clone());
 
-                    // Calculate rental expiry based on plan
                     let now_ms = js_sys::Date::now();
                     let duration_ms =
                         order.plan.duration_days() as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
+
+                    // Check if this is a renewal order
+                    if let Some(ref renewal_username) = order.renewal_for {
+                        // Extend existing rental
+                        let rental_key = format!("rentals/{}.json", renewal_username);
+                        if let Some(rental_obj) = bucket.get(&rental_key).execute().await? {
+                            let rental_body = rental_obj.body().unwrap();
+                            let rental_text = rental_body.text().await?;
+                            if let Ok(mut rental) = serde_json::from_str::<Rental>(&rental_text) {
+                                let current_expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
+                                let current_expires_ms = current_expires_date.get_time();
+                                let base_ms = if current_expires_ms > now_ms {
+                                    current_expires_ms
+                                } else {
+                                    now_ms
+                                };
+                                let new_expires_ms = base_ms + duration_ms;
+                                let new_expires_date = js_sys::Date::new(&(new_expires_ms.into()));
+                                rental.expires_at = new_expires_date
+                                    .to_iso_string()
+                                    .as_string()
+                                    .unwrap_or_default();
+                                rental.status = "active".to_string();
+                                rental.plan = order.plan.clone();
+
+                                let rental_json = serde_json::to_string(&rental)
+                                    .map_err(|e| Error::RustError(e.to_string()))?;
+                                bucket.put(&rental_key, rental_json).execute().await?;
+
+                                order.status = OrderStatus::Provisioned;
+                                order.management_token = rental.management_token.clone();
+                                let updated_json = serde_json::to_string(&order)
+                                    .map_err(|e| Error::RustError(e.to_string()))?;
+                                bucket.put(&key, updated_json).execute().await?;
+
+                                return Response::ok("ok");
+                            }
+                        }
+                        return Response::ok("rental not found for renewal");
+                    }
+
+                    // New rental — calculate expiry
                     let rental_expires_ms = now_ms + duration_ms;
                     let rental_expires_date =
                         js_sys::Date::new(&(rental_expires_ms.into()));
@@ -534,6 +576,141 @@ async fn handle_coinos_webhook(
     Response::ok("no matching order")
 }
 
+/// POST /api/renew — renew an existing rental
+#[cfg(target_arch = "wasm32")]
+async fn handle_renew(
+    mut req: Request,
+    ctx: RouteContext<()>,
+) -> Result<Response> {
+    let body: RenewRequest = req.json().await.map_err(|_| {
+        Error::RustError("Invalid request body".to_string())
+    })?;
+
+    let bucket = ctx.env.bucket("BUCKET")?;
+
+    // Find rental by management_token
+    let list = bucket.list().prefix("rentals/").execute().await?;
+    let mut found_rental: Option<Rental> = None;
+    for obj_entry in list.objects() {
+        let key = obj_entry.key();
+        if let Some(obj) = bucket.get(&key).execute().await? {
+            let obj_body = obj.body().unwrap();
+            let text = obj_body.text().await?;
+            if let Ok(rental) = serde_json::from_str::<Rental>(&text) {
+                if rental.management_token.as_deref() == Some(&body.management_token) {
+                    found_rental = Some(rental);
+                    break;
+                }
+            }
+        }
+    }
+
+    let rental = match found_rental {
+        Some(r) => r,
+        None => return Response::error("Rental not found", 404),
+    };
+
+    let order_id = generate_order_id();
+    let amount_sats = body.plan.amount_sats();
+    let webhook_secret = generate_webhook_secret();
+    let domain = ctx
+        .env
+        .var("DOMAIN")
+        .map(|v| v.to_string())
+        .unwrap_or_else(|_| "noscha.io".to_string());
+    let webhook_url = format!("https://{}/api/webhook/coinos", domain);
+
+    // Create invoice (mock or real)
+    let is_mock = coinos_mock::is_mock_enabled(&ctx.env);
+    let invoice = if is_mock {
+        coinos_mock::create_mock_invoice(amount_sats, &webhook_url, &webhook_secret).await?
+    } else {
+        let api_token = ctx.env.secret("COINOS_API_TOKEN")?.to_string();
+        coinos::create_invoice(&api_token, amount_sats, &webhook_url, &webhook_secret).await?
+    };
+
+    // Calculate expiry (15 min for invoice)
+    let now = js_sys::Date::now();
+    let expires_ms = now + 15.0 * 60.0 * 1000.0;
+    let created_at = js_sys::Date::new_0();
+    let expires_at = js_sys::Date::new(&(expires_ms.into()));
+
+    let order = Order {
+        order_id: order_id.clone(),
+        username: rental.username.clone(),
+        plan: body.plan.clone(),
+        amount_sats,
+        bolt11: invoice.text.clone(),
+        status: if is_mock {
+            OrderStatus::Paid
+        } else {
+            OrderStatus::Pending
+        },
+        created_at: created_at.to_iso_string().as_string().unwrap_or_default(),
+        expires_at: expires_at.to_iso_string().as_string().unwrap_or_default(),
+        coinos_invoice_hash: invoice.hash,
+        webhook_secret: Some(webhook_secret),
+        services_requested: None,
+        management_token: None,
+        renewal_for: Some(rental.username.clone()),
+    };
+
+    // Save order to R2
+    let order_key = format!("orders/{}.json", order_id);
+    let order_json =
+        serde_json::to_string(&order).map_err(|e| Error::RustError(e.to_string()))?;
+    bucket.put(&order_key, order_json).execute().await?;
+
+    let resp_order_id = order.order_id.clone();
+    let resp_amount_sats = order.amount_sats;
+    let resp_bolt11 = order.bolt11.clone();
+    let resp_expires_at = order.expires_at.clone();
+
+    // In mock mode, immediately extend the rental
+    if is_mock {
+        let now_ms = js_sys::Date::now();
+        let duration_ms = order.plan.duration_days() as f64 * 24.0 * 60.0 * 60.0 * 1000.0;
+        let current_expires_date = js_sys::Date::new(&rental.expires_at.clone().into());
+        let current_expires_ms = current_expires_date.get_time();
+        let base_ms = if current_expires_ms > now_ms {
+            current_expires_ms
+        } else {
+            now_ms
+        };
+        let new_expires_ms = base_ms + duration_ms;
+        let new_expires_date = js_sys::Date::new(&(new_expires_ms.into()));
+        let new_expires_at = new_expires_date
+            .to_iso_string()
+            .as_string()
+            .unwrap_or_default();
+
+        let mut updated_rental = rental;
+        updated_rental.expires_at = new_expires_at;
+        updated_rental.status = "active".to_string();
+        updated_rental.plan = order.plan.clone();
+
+        let rental_key = format!("rentals/{}.json", updated_rental.username);
+        let rental_json = serde_json::to_string(&updated_rental)
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        bucket.put(&rental_key, rental_json).execute().await?;
+
+        // Update order to Provisioned
+        let mut order = order;
+        order.status = OrderStatus::Provisioned;
+        order.management_token = updated_rental.management_token.clone();
+        let updated_json = serde_json::to_string(&order)
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        bucket.put(&order_key, updated_json).execute().await?;
+    }
+
+    Response::from_json(&RenewResponse {
+        order_id: resp_order_id,
+        amount_sats: resp_amount_sats,
+        bolt11: resp_bolt11,
+        expires_at: resp_expires_at,
+    })
+}
+
 /// GET /my/{management_token} — user my-page
 #[cfg(target_arch = "wasm32")]
 async fn handle_my_page(
@@ -552,7 +729,7 @@ async fn handle_my_page(
             let text = body.text().await?;
             if let Ok(rental) = serde_json::from_str::<Rental>(&text) {
                 if rental.management_token.as_deref() == Some(token) {
-                    return Response::from_html(render_my_page(&rental, &ctx.env));
+                    return Response::from_html(render_my_page(&rental, &ctx.env, token));
                 }
             }
         }
@@ -562,7 +739,7 @@ async fn handle_my_page(
 }
 
 #[cfg(target_arch = "wasm32")]
-fn render_my_page(rental: &Rental, env: &Env) -> String {
+fn render_my_page(rental: &Rental, env: &Env, management_token: &str) -> String {
     let domain = env
         .var("DOMAIN")
         .map(|v| v.to_string())
@@ -655,6 +832,13 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgro
 .svc-badge.nip{{background:#0e7490;color:#fff}}
 h2{{font-size:1rem;margin-bottom:.75rem;color:var(--text)}}
 .extend-link{{display:inline-block;margin-top:1rem;color:var(--purple);font-size:.85rem}}
+.renew-form{{display:flex;gap:.5rem;align-items:center;margin-top:1rem}}
+.renew-form select,.renew-form button{{padding:.4rem .8rem;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.85rem}}
+.renew-form button{{background:var(--purple);border:none;color:#fff;cursor:pointer;font-weight:600}}
+.renew-form button:hover{{opacity:.9}}
+.renew-form button:disabled{{opacity:.5;cursor:not-allowed}}
+#renew-status{{margin-top:.75rem;font-size:.85rem;color:var(--muted)}}
+#renew-bolt11{{word-break:break-all;background:var(--bg);padding:.5rem;border-radius:6px;margin-top:.5rem;font-family:monospace;font-size:.75rem}}
 </style>
 </head>
 <body>
@@ -671,7 +855,46 @@ h2{{font-size:1rem;margin-bottom:.75rem;color:var(--text)}}
 <h2>Active Services</h2>
 {services}
 </div>
-<a class="extend-link" href="/">&#8592; Extend or renew your rental</a>
+<div class="renew-form" id="renew-form">
+<select id="renew-plan">
+<option value="1d">1 Day — 10 sats</option>
+<option value="7d">7 Days — 50 sats</option>
+<option value="30d" selected>30 Days — 150 sats</option>
+<option value="90d">90 Days — 350 sats</option>
+<option value="365d">365 Days — 800 sats</option>
+</select>
+<button id="renew-btn" onclick="doRenew()">Extend</button>
+</div>
+<div id="renew-status"></div>
+<script>
+const MGMT_TOKEN="{mgmt_token}";
+async function doRenew(){{
+  const btn=document.getElementById('renew-btn');
+  const st=document.getElementById('renew-status');
+  const plan=document.getElementById('renew-plan').value;
+  btn.disabled=true;st.textContent='Creating invoice...';
+  try{{
+    const r=await fetch('/api/renew',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{management_token:MGMT_TOKEN,plan:plan}})}});
+    if(!r.ok){{const t=await r.text();st.textContent='Error: '+t;btn.disabled=false;return;}}
+    const d=await r.json();
+    st.innerHTML='<div>Pay this invoice to extend:</div><div id="renew-bolt11">'+d.bolt11+'</div>';
+    pollOrder(d.order_id);
+  }}catch(e){{st.textContent='Error: '+e.message;btn.disabled=false;}}
+}}
+async function pollOrder(oid){{
+  const st=document.getElementById('renew-status');
+  for(let i=0;i<120;i++){{
+    await new Promise(r=>setTimeout(r,3000));
+    try{{
+      const r=await fetch('/api/order/'+oid+'/status');
+      const d=await r.json();
+      if(d.status==='provisioned'){{st.textContent='Renewed! Reloading...';setTimeout(()=>location.reload(),1000);return;}}
+    }}catch(e){{}}
+  }}
+  st.textContent='Invoice may have expired. Please try again.';
+  document.getElementById('renew-btn').disabled=false;
+}}
+</script>
 </div>
 </body>
 </html>"#,
@@ -682,6 +905,7 @@ h2{{font-size:1rem;margin-bottom:.75rem;color:var(--text)}}
         expires = &rental.expires_at[..10.min(rental.expires_at.len())],
         days = days_remaining,
         services = services_html,
+        mgmt_token = management_token,
     )
 }
 
@@ -798,6 +1022,7 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
         .post_async("/api/order", handle_create_order)
         .get_async("/api/order/:order_id/status", handle_order_status)
         .post_async("/api/webhook/coinos", handle_coinos_webhook)
+        .post_async("/api/renew", handle_renew)
         .get_async("/my/:token", handle_my_page)
         .get_async("/.well-known/nostr.json", handle_nip05)
         .options_async("/.well-known/nostr.json", handle_nip05_options)
