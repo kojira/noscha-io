@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>noscha.io — Lightning-powered identity services</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d0d0d;--surface:#1a1a1a;--border:#2a2a2a;--text:#e0e0e0;--muted:#888;--purple:#8b5cf6;--purple-dim:#6d28d9;--orange:#f97316;--orange-dim:#c2410c;--green:#22c55e;--red:#ef4444}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh}
+a{color:var(--purple);text-decoration:none}
+.container{max-width:680px;margin:0 auto;padding:2rem 1.5rem}
+
+/* Header */
+.logo{font-size:2rem;font-weight:700;text-align:center;margin-bottom:.25rem}
+.logo span:first-child{color:var(--purple)}
+.logo span:last-child{color:var(--orange)}
+.tagline{text-align:center;color:var(--muted);font-size:.95rem;margin-bottom:2.5rem}
+
+/* Sections */
+.section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1.5rem;margin-bottom:1.5rem}
+.section h2{font-size:1.1rem;margin-bottom:1rem;color:var(--text)}
+
+/* Features */
+.features{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.5rem}
+.feat{text-align:center;padding:1rem .5rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
+.feat-icon{font-size:1.5rem;margin-bottom:.25rem}
+.feat-title{font-size:.85rem;font-weight:600;color:var(--text)}
+.feat-desc{font-size:.75rem;color:var(--muted)}
+
+/* Pricing */
+.pricing-table{width:100%;border-collapse:collapse}
+.pricing-table th{text-align:left;padding:.5rem .75rem;border-bottom:2px solid var(--border);color:var(--muted);font-size:.8rem;text-transform:uppercase;letter-spacing:.05em}
+.pricing-table td{padding:.5rem .75rem;border-bottom:1px solid var(--border)}
+.pricing-table tr:last-child td{border-bottom:none}
+.price{color:var(--orange);font-weight:600}
+
+/* Form */
+.field{margin-bottom:1.25rem}
+.field label{display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem;color:var(--muted)}
+input[type=text],input[type=email]{width:100%;padding:.6rem .75rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.95rem;outline:none;transition:border .2s}
+input:focus{border-color:var(--purple)}
+.input-hint{font-size:.75rem;margin-top:.25rem;min-height:1.1em}
+.hint-ok{color:var(--green)}
+.hint-err{color:var(--red)}
+.hint-loading{color:var(--muted)}
+
+/* Radio plan selector */
+.plans{display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem}
+.plan-opt{position:relative}
+.plan-opt input{position:absolute;opacity:0;pointer-events:none}
+.plan-opt label{display:block;text-align:center;padding:.6rem .25rem;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:.8rem;transition:all .2s;background:var(--bg)}
+.plan-opt label .dur{display:block;font-weight:600;color:var(--text)}
+.plan-opt label .sat{display:block;font-size:.7rem;color:var(--orange)}
+.plan-opt input:checked+label{border-color:var(--purple);background:var(--purple-dim);color:#fff}
+.plan-opt input:checked+label .sat{color:var(--orange)}
+
+/* Service toggles */
+.svc-toggle{display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;cursor:pointer;font-size:.9rem}
+.svc-toggle input[type=checkbox]{accent-color:var(--purple);width:16px;height:16px}
+.svc-fields{padding-left:1.5rem;margin-bottom:1rem;display:none}
+.svc-fields.open{display:block}
+.svc-fields .field{margin-bottom:.75rem}
+.svc-fields .field:last-child{margin-bottom:0}
+.inline-row{display:flex;gap:.5rem;align-items:center}
+.inline-row select{padding:.6rem .5rem;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.9rem;outline:none}
+.inline-row input[type=text]{flex:1}
+.check-row{display:flex;align-items:center;gap:.4rem;margin-top:.35rem;font-size:.8rem;color:var(--muted)}
+.check-row input{accent-color:var(--purple)}
+
+/* Buttons */
+.btn{display:block;width:100%;padding:.75rem;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-primary{background:linear-gradient(135deg,var(--purple),var(--orange));color:#fff}
+.btn-primary:hover{opacity:.9}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.btn-secondary{background:var(--surface);border:1px solid var(--border);color:var(--text);margin-top:.75rem}
+.btn-secondary:hover{border-color:var(--purple)}
+
+/* Payment screen */
+#payment-screen{display:none}
+.qr-wrap{text-align:center;margin:1.5rem 0}
+.qr-wrap #qrcode{display:inline-block;padding:12px;background:#fff;border-radius:8px}
+.bolt11-box{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem;word-break:break-all;font-size:.75rem;color:var(--muted);cursor:pointer;position:relative;margin-bottom:1rem}
+.bolt11-box:hover{border-color:var(--purple)}
+.bolt11-box::after{content:'click to copy';position:absolute;right:.5rem;top:.5rem;font-size:.65rem;color:var(--purple)}
+.status-badge{display:inline-block;padding:.25rem .75rem;border-radius:20px;font-size:.85rem;font-weight:600}
+.status-pending{background:#f9731622;color:var(--orange)}
+.status-paid{background:#22c55e22;color:var(--green)}
+.status-provisioned{background:#8b5cf622;color:var(--purple)}
+.poll-info{text-align:center;color:var(--muted);font-size:.8rem;margin-top:.5rem}
+
+/* Success */
+.success-box{text-align:center;padding:2rem 1rem}
+.success-check{font-size:3rem;margin-bottom:.5rem}
+.success-title{font-size:1.2rem;font-weight:700;color:var(--green);margin-bottom:.5rem}
+.success-detail{font-size:.85rem;color:var(--muted)}
+
+/* Responsive */
+@media(max-width:600px){
+  .features{grid-template-columns:1fr}
+  .plans{grid-template-columns:repeat(3,1fr)}
+  .container{padding:1.25rem 1rem}
+  .inline-row{flex-direction:column}
+  .inline-row select,.inline-row input[type=text]{width:100%}
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="logo"><span>noscha</span><span>.io</span></div>
+  <p class="tagline">Lightning-powered disposable email, subdomain &amp; NIP-05 identity. No KYC. Instant activation.</p>
+
+  <!-- Info Section -->
+  <div id="info-section">
+    <div class="features">
+      <div class="feat"><div class="feat-icon">&#9993;</div><div class="feat-title">Email</div><div class="feat-desc">username@noscha.io forwarding</div></div>
+      <div class="feat"><div class="feat-icon">&#127760;</div><div class="feat-title">Subdomain</div><div class="feat-desc">username.noscha.io DNS</div></div>
+      <div class="feat"><div class="feat-icon">&#9889;</div><div class="feat-title">NIP-05</div><div class="feat-desc">Nostr identity verification</div></div>
+    </div>
+
+    <div class="section">
+      <h2>Pricing</h2>
+      <table class="pricing-table">
+        <tr><th>Duration</th><th>Price</th><th>Per day</th></tr>
+        <tr><td>1 day</td><td class="price">10 sats</td><td class="price">10 sats</td></tr>
+        <tr><td>1 week</td><td class="price">50 sats</td><td class="price">~7 sats</td></tr>
+        <tr><td>1 month</td><td class="price">150 sats</td><td class="price">5 sats</td></tr>
+        <tr><td>3 months</td><td class="price">350 sats</td><td class="price">~4 sats</td></tr>
+        <tr><td>1 year</td><td class="price">800 sats</td><td class="price">~2 sats</td></tr>
+      </table>
+    </div>
+
+    <!-- Order Form -->
+    <div class="section" id="order-section">
+      <h2>Get started</h2>
+
+      <div class="field">
+        <label>Username</label>
+        <input type="text" id="username" placeholder="satoshi" autocomplete="off" spellcheck="false">
+        <div class="input-hint" id="username-hint"></div>
+      </div>
+
+      <div class="field">
+        <label>Plan</label>
+        <div class="plans">
+          <div class="plan-opt"><input type="radio" name="plan" id="p1d" value="1d"><label for="p1d"><span class="dur">1 day</span><span class="sat">10 sats</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p7d" value="7d" checked><label for="p7d"><span class="dur">1 week</span><span class="sat">50 sats</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p30d" value="30d"><label for="p30d"><span class="dur">1 month</span><span class="sat">150 sats</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p90d" value="90d"><label for="p90d"><span class="dur">3 months</span><span class="sat">350 sats</span></label></div>
+          <div class="plan-opt"><input type="radio" name="plan" id="p365d" value="365d"><label for="p365d"><span class="dur">1 year</span><span class="sat">800 sats</span></label></div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Services</label>
+
+        <label class="svc-toggle"><input type="checkbox" id="svc-email"> Email forwarding</label>
+        <div class="svc-fields" id="svc-email-fields">
+          <div class="field">
+            <label>Forward to</label>
+            <input type="email" id="email-forward" placeholder="you@example.com">
+          </div>
+        </div>
+
+        <label class="svc-toggle"><input type="checkbox" id="svc-subdomain"> Subdomain DNS</label>
+        <div class="svc-fields" id="svc-subdomain-fields">
+          <div class="field">
+            <label>DNS Record</label>
+            <div class="inline-row">
+              <select id="dns-type">
+                <option value="CNAME">CNAME</option>
+                <option value="A">A</option>
+                <option value="AAAA">AAAA</option>
+              </select>
+              <input type="text" id="dns-target" placeholder="target (e.g. mysite.example.com)">
+            </div>
+            <div class="check-row"><input type="checkbox" id="dns-proxied"> Cloudflare proxy (orange cloud)</div>
+          </div>
+        </div>
+
+        <label class="svc-toggle"><input type="checkbox" id="svc-nip05"> NIP-05 Nostr identity</label>
+        <div class="svc-fields" id="svc-nip05-fields">
+          <div class="field">
+            <label>Nostr public key (hex)</label>
+            <input type="text" id="nip05-pubkey" placeholder="npub hex pubkey (64 chars)">
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="order-btn" disabled>Pay with Lightning</button>
+    </div>
+  </div>
+
+  <!-- Payment Screen -->
+  <div id="payment-screen">
+    <div class="section">
+      <h2>Payment</h2>
+      <div style="text-align:center;margin-bottom:1rem">
+        <span class="status-badge status-pending" id="pay-status-badge">waiting for payment</span>
+      </div>
+      <div class="qr-wrap"><div id="qrcode"></div></div>
+      <div class="bolt11-box" id="bolt11-box" title="Click to copy"></div>
+      <div style="text-align:center">
+        <span id="pay-amount" style="font-size:1.1rem;font-weight:700;color:var(--orange)"></span>
+      </div>
+      <div class="poll-info" id="poll-info">Checking payment status...</div>
+      <button class="btn btn-secondary" id="back-btn">Cancel</button>
+    </div>
+
+    <!-- Success (shown after payment confirmed) -->
+    <div id="success-box" class="section" style="display:none">
+      <div class="success-box">
+        <div class="success-check">&#10003;</div>
+        <div class="success-title">Activated!</div>
+        <div class="success-detail" id="success-detail"></div>
+        <button class="btn btn-secondary" style="margin-top:1.5rem" onclick="location.reload()">New order</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+(function(){
+  // Elements
+  var usernameEl = document.getElementById('username');
+  var hintEl = document.getElementById('username-hint');
+  var orderBtn = document.getElementById('order-btn');
+  var infoSection = document.getElementById('info-section');
+  var payScreen = document.getElementById('payment-screen');
+  var bolt11Box = document.getElementById('bolt11-box');
+  var payAmount = document.getElementById('pay-amount');
+  var payBadge = document.getElementById('pay-status-badge');
+  var pollInfo = document.getElementById('poll-info');
+  var successBox = document.getElementById('success-box');
+  var successDetail = document.getElementById('success-detail');
+  var backBtn = document.getElementById('back-btn');
+
+  var usernameOk = false;
+  var checkTimer = null;
+  var pollTimer = null;
+  var currentOrderId = null;
+
+  // Service toggle wiring
+  ['email','subdomain','nip05'].forEach(function(s){
+    var cb = document.getElementById('svc-'+s);
+    var fields = document.getElementById('svc-'+s+'-fields');
+    cb.addEventListener('change', function(){
+      fields.classList.toggle('open', cb.checked);
+    });
+  });
+
+  // Username validation with debounce
+  usernameEl.addEventListener('input', function(){
+    clearTimeout(checkTimer);
+    var val = usernameEl.value.trim().toLowerCase();
+    usernameEl.value = val;
+    usernameOk = false;
+    updateOrderBtn();
+    if(!val){hintEl.textContent='';hintEl.className='input-hint';return;}
+    if(val.length < 3){setHint('Min 3 characters','err');return;}
+    if(val.length > 20){setHint('Max 20 characters','err');return;}
+    if(!/^[a-z0-9]([a-z0-9_-]*[a-z0-9])?$/.test(val)){setHint('Letters, numbers, hyphens, underscores only','err');return;}
+    setHint('Checking...','loading');
+    checkTimer = setTimeout(function(){checkUsername(val);}, 400);
+  });
+
+  function setHint(msg,type){
+    hintEl.textContent = msg;
+    hintEl.className = 'input-hint hint-'+type;
+  }
+
+  function checkUsername(name){
+    fetch('/api/check/'+encodeURIComponent(name))
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(usernameEl.value.trim().toLowerCase() !== name) return;
+        if(d.error){setHint(d.error,'err');usernameOk=false;}
+        else if(d.available){setHint(name+'@noscha.io is available','ok');usernameOk=true;}
+        else{setHint('Username is taken','err');usernameOk=false;}
+        updateOrderBtn();
+      })
+      .catch(function(){setHint('Check failed','err');});
+  }
+
+  function updateOrderBtn(){
+    var anyService = document.getElementById('svc-email').checked || document.getElementById('svc-subdomain').checked || document.getElementById('svc-nip05').checked;
+    orderBtn.disabled = !usernameOk || !anyService;
+  }
+
+  // Re-evaluate button on service toggle
+  document.querySelectorAll('.svc-toggle input').forEach(function(cb){
+    cb.addEventListener('change', updateOrderBtn);
+  });
+
+  // Order submission
+  orderBtn.addEventListener('click', function(){
+    if(orderBtn.disabled) return;
+    orderBtn.disabled = true;
+    orderBtn.textContent = 'Creating invoice...';
+
+    var services = {};
+    if(document.getElementById('svc-email').checked){
+      services.email = {forward_to: document.getElementById('email-forward').value.trim()};
+    }
+    if(document.getElementById('svc-subdomain').checked){
+      services.subdomain = {
+        type: document.getElementById('dns-type').value,
+        target: document.getElementById('dns-target').value.trim(),
+        proxied: document.getElementById('dns-proxied').checked
+      };
+    }
+    if(document.getElementById('svc-nip05').checked){
+      services.nip05 = {pubkey: document.getElementById('nip05-pubkey').value.trim()};
+    }
+
+    var plan = document.querySelector('input[name=plan]:checked').value;
+    var body = {
+      username: usernameEl.value.trim().toLowerCase(),
+      plan: plan,
+      services: services
+    };
+
+    fetch('/api/order',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    })
+    .then(function(r){
+      if(!r.ok) return r.text().then(function(t){throw new Error(t);});
+      return r.json();
+    })
+    .then(function(d){
+      showPayment(d, body.username);
+    })
+    .catch(function(e){
+      alert('Error: '+(e.message||'Failed to create order'));
+      orderBtn.disabled = false;
+      orderBtn.textContent = 'Pay with Lightning';
+    });
+  });
+
+  function showPayment(order, username){
+    currentOrderId = order.order_id;
+    infoSection.style.display = 'none';
+    payScreen.style.display = 'block';
+    successBox.style.display = 'none';
+
+    bolt11Box.textContent = order.bolt11;
+    payAmount.textContent = order.amount_sats + ' sats';
+    payBadge.textContent = 'waiting for payment';
+    payBadge.className = 'status-badge status-pending';
+    pollInfo.textContent = 'Checking payment status...';
+
+    // QR code
+    var qrEl = document.getElementById('qrcode');
+    qrEl.innerHTML = '';
+    if(typeof QRCode !== 'undefined'){
+      new QRCode(qrEl, {text: order.bolt11, width:220, height:220, colorDark:'#000', colorLight:'#fff', correctLevel:QRCode.CorrectLevel.L});
+    }
+
+    // Copy bolt11
+    bolt11Box.onclick = function(){
+      navigator.clipboard.writeText(order.bolt11).then(function(){
+        var orig = bolt11Box.textContent;
+        bolt11Box.textContent = 'Copied!';
+        setTimeout(function(){bolt11Box.textContent = orig;}, 1500);
+      });
+    };
+
+    // Poll status
+    startPolling(order.order_id, username);
+  }
+
+  function startPolling(orderId, username){
+    clearInterval(pollTimer);
+    pollTimer = setInterval(function(){
+      fetch('/api/order/'+encodeURIComponent(orderId)+'/status')
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(d.status === 'paid' || d.status === 'provisioned'){
+            clearInterval(pollTimer);
+            payBadge.textContent = d.status === 'provisioned' ? 'provisioned' : 'paid';
+            payBadge.className = 'status-badge '+(d.status === 'provisioned' ? 'status-provisioned' : 'status-paid');
+            pollInfo.textContent = '';
+            showSuccess(username);
+          }
+        });
+    }, 3000);
+  }
+
+  function showSuccess(username){
+    successBox.style.display = 'block';
+    var lines = [username + '@noscha.io'];
+    if(document.getElementById('svc-subdomain').checked) lines.push(username+'.noscha.io');
+    if(document.getElementById('svc-nip05').checked) lines.push('NIP-05: '+username+'@noscha.io');
+    successDetail.innerHTML = lines.join('<br>') + '<br><br>Your services are now active.';
+  }
+
+  // Back / cancel
+  backBtn.addEventListener('click', function(){
+    clearInterval(pollTimer);
+    infoSection.style.display = 'block';
+    payScreen.style.display = 'none';
+    orderBtn.disabled = false;
+    orderBtn.textContent = 'Pay with Lightning';
+  });
+})();
+</script>
+</body>
+</html>

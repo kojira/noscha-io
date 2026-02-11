@@ -2,6 +2,7 @@ pub mod dns;
 pub mod email;
 pub mod nip05;
 pub mod types;
+pub mod ui;
 pub mod validation;
 
 #[cfg(target_arch = "wasm32")]
@@ -492,6 +493,9 @@ async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
 
     Router::new()
         .get("/", |_, _| {
+            Response::from_html(ui::landing_page_html())
+        })
+        .get("/api/info", |_, _| {
             let info = ServiceInfo {
                 name: "noscha.io",
                 description: "Lightning Network powered disposable email, subdomain & NIP-05 service. No KYC, no signup, instant activation.",
