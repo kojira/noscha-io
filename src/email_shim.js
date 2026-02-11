@@ -158,6 +158,30 @@ export default {
       return;
     }
 
+    // Rate limit: 5 emails per 24 hours per user
+    const DAILY_LIMIT = 5;
+    const WINDOW_MS = 24 * 60 * 60 * 1000;
+    const countKey = `emails/${username}.json`;
+    let emailCount = { count: 0, window_start: now.toISOString() };
+    try {
+      const countObj = await env.BUCKET.get(countKey);
+      if (countObj) {
+        emailCount = JSON.parse(await countObj.text());
+        const windowStart = new Date(emailCount.window_start);
+        if (now - windowStart >= WINDOW_MS) {
+          // Window expired, reset
+          emailCount = { count: 0, window_start: now.toISOString() };
+        }
+      }
+    } catch (e) {
+      console.error(`Rate limit check error: ${e.message}`);
+    }
+
+    if (emailCount.count >= DAILY_LIMIT) {
+      message.setReject("Daily email forwarding limit reached (5/day)");
+      return;
+    }
+
     // Read email body
     const rawEmail = await new Response(message.raw).text();
 
@@ -209,6 +233,14 @@ Forwarded from <strong>${message.from}</strong> to <strong>${recipient}</strong>
       console.error(`Resend API error: ${res.status} ${errText}`);
       message.setReject("Email forwarding failed");
       return;
+    }
+
+    // Increment email count after successful forward
+    emailCount.count += 1;
+    try {
+      await env.BUCKET.put(countKey, JSON.stringify(emailCount));
+    } catch (e) {
+      console.error(`Failed to update email count: ${e.message}`);
     }
   }
 };

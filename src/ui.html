@@ -166,6 +166,11 @@ input:focus{border-color:var(--purple)}
             <label>Forward to</label>
             <input type="email" id="email-forward" placeholder="you@example.com">
           </div>
+          <div style="font-size:.78rem;color:var(--muted);margin-top:.5rem;line-height:1.5">
+            ⚠️ Email forwarding is receive-only. You cannot send emails from your noscha.io address.<br>
+            ⚠️ Each user is limited to 5 forwarded emails per 24 hours.<br>
+            ⚠️ During high traffic periods, email forwarding may be temporarily unavailable.
+          </div>
         </div>
 
         <label class="svc-toggle"><input type="checkbox" id="svc-subdomain"> Subdomain DNS</label>
@@ -197,6 +202,20 @@ input:focus{border-color:var(--purple)}
         <span style="color:var(--muted);font-size:.85rem">Total: </span>
         <span id="total-sats" style="font-size:1.2rem;font-weight:700;color:var(--orange)">0 sats</span>
         <div id="bundle-badge" style="display:none;margin-top:.25rem;font-size:.75rem;font-weight:600;color:var(--green)">All-in bundle discount applied!</div>
+      </div>
+
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.78rem;color:var(--muted);line-height:1.6">
+        <div style="font-weight:600;color:var(--text);margin-bottom:.4rem">Terms of Service</div>
+        <ul style="margin:0;padding-left:1.2rem">
+          <li>No spam or bulk email usage</li>
+          <li>No illegal activities</li>
+          <li>Service may be suspended for abuse</li>
+          <li>Email forwarding limits apply (5/day per user)</li>
+          <li>noscha.io reserves the right to terminate accounts that violate these terms</li>
+        </ul>
+        <label style="display:flex;align-items:center;gap:.4rem;margin-top:.6rem;cursor:pointer;color:var(--text);font-size:.82rem">
+          <input type="checkbox" id="tos-agree"> I agree to the Terms of Service
+        </label>
       </div>
 
       <button class="btn btn-primary" id="order-btn" disabled>Pay with Lightning</button>
@@ -355,13 +374,17 @@ input:focus{border-color:var(--purple)}
 
   function updateOrderBtn(){
     var anyService = document.getElementById('svc-email').checked || document.getElementById('svc-subdomain').checked || document.getElementById('svc-nip05').checked;
-    orderBtn.disabled = !usernameOk || !anyService;
+    var tosAgreed = document.getElementById('tos-agree').checked;
+    orderBtn.disabled = !usernameOk || !anyService || !tosAgreed;
   }
 
   // Re-evaluate button on service toggle
   document.querySelectorAll('.svc-toggle input').forEach(function(cb){
     cb.addEventListener('change', function(){ updateOrderBtn(); calcTotal(); });
   });
+
+  // TOS checkbox
+  document.getElementById('tos-agree').addEventListener('change', updateOrderBtn);
 
   // Order submission
   orderBtn.addEventListener('click', function(){

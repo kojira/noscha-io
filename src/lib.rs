@@ -963,7 +963,7 @@ h2{{font-size:1rem;margin-bottom:.75rem;color:var(--text)}}
 <div class="row"><span class="label">Plan</span><span class="val">{plan}</span></div>
 <div class="row"><span class="label">Status</span><span class="badge" style="background:{status_color};color:#fff">{status}</span></div>
 <div class="row"><span class="label">Expires</span><span class="val">{expires}</span></div>
-<div class="row"><span class="label">Days remaining</span><span class="val">{days}</span></div>
+<div class="row"><span class="label">Remaining</span><span class="val" id="remaining-val">{days}</span></div>
 </div>
 <div class="card">
 <h2>Active Services</h2>
@@ -982,6 +982,23 @@ h2{{font-size:1rem;margin-bottom:.75rem;color:var(--text)}}
 <div id="renew-status"></div>
 <script>
 const MGMT_TOKEN="{mgmt_token}";
+const EXPIRES_AT="{expires_at}";
+(function(){{
+  var el=document.getElementById('remaining-val');
+  function update(){{
+    var now=Date.now(),exp=new Date(EXPIRES_AT).getTime();
+    var diff=exp-now;
+    if(diff<=0){{el.textContent='Expired';return;}}
+    var days=Math.floor(diff/86400000);
+    if(days>=1){{el.textContent=days+' day'+(days>1?'s':'');return;}}
+    var h=Math.floor(diff/3600000);diff%=3600000;
+    var m=Math.floor(diff/60000);diff%=60000;
+    var s=Math.floor(diff/1000);
+    el.textContent=h+'h '+m+'m '+s+'s';
+  }}
+  update();
+  setInterval(update,1000);
+}})()
 async function doRenew(){{
   const btn=document.getElementById('renew-btn');
   const st=document.getElementById('renew-status');
@@ -1020,6 +1037,7 @@ async function pollOrder(oid){{
         days = days_remaining,
         services = services_html,
         mgmt_token = management_token,
+        expires_at = &rental.expires_at,
     )
 }
 
