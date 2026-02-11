@@ -198,6 +198,12 @@ input:focus{border-color:var(--accent)}
       </div>
 
       <div class="field">
+        <label>Webhook URL <span style="color:var(--red);font-size:.65rem">(required)</span></label>
+        <input type="text" id="webhook-url" placeholder="https://discord.com/api/webhooks/..." autocomplete="off" spellcheck="false">
+        <div class="input-hint" style="color:var(--muted);font-size:.7rem;margin-top:.25rem">Notifications will be sent here. Discord webhooks recommended.</div>
+      </div>
+
+      <div class="field">
         <label>Plan</label>
         <div class="plans">
           <div class="plan-opt"><input type="radio" name="plan" id="p1h" value="1h"><label for="p1h"><span class="dur">1 hour</span></label></div>
@@ -445,7 +451,8 @@ input:focus{border-color:var(--accent)}
   function updateOrderBtn(){
     var anyService = document.getElementById('svc-email').checked || document.getElementById('svc-subdomain').checked || document.getElementById('svc-nip05').checked;
     var tosAgreed = document.getElementById('tos-agree').checked;
-    orderBtn.disabled = !usernameOk || !anyService || !tosAgreed;
+    var webhookOk = /^https?:\/\//.test(document.getElementById("webhook-url").value.trim());
+    orderBtn.disabled = !usernameOk || !anyService || !tosAgreed || !webhookOk;
   }
 
   // Re-evaluate button on service toggle
@@ -455,6 +462,7 @@ input:focus{border-color:var(--accent)}
 
   // TOS checkbox
   document.getElementById('tos-agree').addEventListener('change', updateOrderBtn);
+  document.getElementById("webhook-url").addEventListener("input", updateOrderBtn);
 
   // Order submission
   orderBtn.addEventListener('click', function(){
@@ -481,7 +489,8 @@ input:focus{border-color:var(--accent)}
     var body = {
       username: usernameEl.value.trim().toLowerCase(),
       plan: plan,
-      services: services
+      services: services,
+      webhook_url: document.getElementById("webhook-url").value.trim()
     };
 
     fetch('/api/order',{
