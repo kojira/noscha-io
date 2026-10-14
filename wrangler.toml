@@ -51,5 +51,7 @@ REQUIRE_AUTH = "true"
 binding = "BUCKET"
 bucket_name = "noscha-data-staging"
 
+# staging は cron なし（アカウントの cron 枠を共用 cron-hub に譲るため）。
+# 期限切れ DNS・古い受信メールの掃除は staging では行わない。
 [env.staging.triggers]
-crons = ["*/15 * * * *"]
+crons = []
